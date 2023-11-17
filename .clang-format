@@ -1,0 +1,3 @@
+BasedOnStyle: Webkit
+ColumnLimit: 120
+PointerAlignment: Right

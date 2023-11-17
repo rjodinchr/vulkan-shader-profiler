@@ -1,0 +1,49 @@
+#ifndef FUNC_GET
+#define FUNC_GET FUNC
+#endif
+
+// Entry points
+FUNC(GetInstanceProcAddr)
+FUNC(GetDeviceProcAddr)
+
+// Needed discovery functions
+FUNC(EnumerateInstanceLayerProperties)
+FUNC(EnumerateInstanceExtensionProperties)
+
+FUNC(EnumerateDeviceLayerProperties)
+FUNC(EnumerateDeviceExtensionProperties)
+
+FUNC(CreateInstance)
+FUNC(DestroyInstance)
+FUNC(CreateDevice)
+FUNC(DestroyDevice)
+
+// Functions to intercept for the profilter to work
+FUNC(GetDeviceQueue)
+
+FUNC(AllocateCommandBuffers)
+FUNC(FreeCommandBuffers)
+FUNC(BeginCommandBuffer)
+
+FUNC(QueueSubmit)
+FUNC(CmdDispatch)
+FUNC(CmdBindPipeline)
+FUNC(CreateComputePipelines)
+FUNC(CreateShaderModule)
+
+// Functions used internally by the profiler
+FUNC_GET(CreateSemaphore)
+FUNC_GET(DestroySemaphore)
+FUNC_GET(WaitSemaphores)
+
+FUNC_GET(GetQueryPoolResults)
+FUNC_GET(CreateQueryPool)
+FUNC_GET(CmdResetQueryPool)
+
+FUNC_GET(CmdWriteTimestamp)
+
+FUNC_GET(GetCalibratedTimestampsEXT)
+FUNC_GET(GetPhysicalDeviceProperties)
+
+#undef FUNC_GET
+#undef FUNC

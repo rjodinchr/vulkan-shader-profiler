@@ -1,0 +1,15 @@
+{
+  "file_format_version" : "1.0.0",
+  "layer" : {
+    "name": "VK_LAYER_SHADER_PROFILER",
+    "type": "GLOBAL",
+    "library_path": "libvulkan-shader-profiler.so",
+    "api_version": "1.3.0",
+    "implementation_version": "1",
+    "description": "vulkan-shader-profiler github.com/rjodinchr/vulkan-shader-profiler",
+    "functions": {
+      "vkGetInstanceProcAddr": "vksp_GetInstanceProcAddr",
+      "vkGetDeviceProcAddr": "vksp_GetDeviceProcAddr"
+    }
+  }
+}
