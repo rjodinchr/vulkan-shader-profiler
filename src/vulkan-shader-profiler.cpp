@@ -274,6 +274,7 @@ static void GenerateTrace(ThreadInfo *info, ThreadDispatch &cmd)
         PRINT("vkGetQueryPoolResults failed (%d)", result);
         return;
     }
+    DISPATCH(info->device).DestroyQueryPool(info->device, cmd.query_pool, nullptr);
 
     uint64_t start = timestamp_to_ns(info, timestamps[0]);
     uint64_t end = timestamp_to_ns(info, timestamps[1]);

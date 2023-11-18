@@ -39,6 +39,7 @@ FUNC_GET(WaitSemaphores)
 FUNC_GET(GetQueryPoolResults)
 FUNC_GET(CreateQueryPool)
 FUNC_GET(CmdResetQueryPool)
+FUNC_GET(DestroyQueryPool)
 
 FUNC_GET(CmdWriteTimestamp)
 
