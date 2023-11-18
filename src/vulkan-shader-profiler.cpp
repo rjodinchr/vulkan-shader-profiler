@@ -663,7 +663,17 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
 
     PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice)gipa(VK_NULL_HANDLE, "vkCreateDevice");
 
-    VkResult ret = createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
+    std::vector<const char *> ppEnabledExtensionNames;
+    for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+        ppEnabledExtensionNames.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
+    }
+    ppEnabledExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+
+    VkDeviceCreateInfo mCreateInfo = *pCreateInfo;
+    mCreateInfo.enabledLayerCount++;
+    mCreateInfo.ppEnabledExtensionNames = ppEnabledExtensionNames.data();
+
+    VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
     if (ret != VK_SUCCESS) {
         return ret;
     }
