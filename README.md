@@ -69,3 +69,11 @@ Once traces have been generated, on can view them using the [perfetto trace view
 * `vkCreateShaderModule`: Create an perfetto event with the readable version of the Vulkan SPIR-V source code.
 
 Every intercept call also generates a trace for the function.
+
+Functions used by `vulkan-shader-profiler` internally:
+
+* `CreateSemaphore`, `DestroySemaphore`, `WaitSemaphores`: To know when a workload end to create the event.
+* `CreateQueryPool`, `DestroyQueryPool`, `GetQueryPoolResults`, `CmdResetQueryPool`: To have somewhere to store the timestamp during the command buffer execution.
+* `CmdWriteTimestamp`: To store the timestamp during the command buffer execution.
+* `GetCalibratedTimestampsEXT`: To convert the device timestamp to the host timeline
+* `GetPhysicalDeviceProperties`: To convert the number of ticks returned by `CmdWriteTimestamp` to actual time information in nano-seconds.

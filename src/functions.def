@@ -6,25 +6,17 @@
 FUNC(GetInstanceProcAddr)
 FUNC(GetDeviceProcAddr)
 
-// Needed discovery functions
-FUNC(EnumerateInstanceLayerProperties)
-FUNC(EnumerateInstanceExtensionProperties)
-
-FUNC(EnumerateDeviceLayerProperties)
-FUNC(EnumerateDeviceExtensionProperties)
-
+// Create/Destroy functions
 FUNC(CreateInstance)
 FUNC(DestroyInstance)
 FUNC(CreateDevice)
 FUNC(DestroyDevice)
 
-// Functions to intercept for the profilter to work
+// Functions to intercept for the profiler to work
 FUNC(GetDeviceQueue)
-
 FUNC(AllocateCommandBuffers)
 FUNC(FreeCommandBuffers)
 FUNC(BeginCommandBuffer)
-
 FUNC(QueueSubmit)
 FUNC(CmdDispatch)
 FUNC(CmdBindPipeline)
@@ -35,14 +27,11 @@ FUNC(CreateShaderModule)
 FUNC_GET(CreateSemaphore)
 FUNC_GET(DestroySemaphore)
 FUNC_GET(WaitSemaphores)
-
-FUNC_GET(GetQueryPoolResults)
 FUNC_GET(CreateQueryPool)
-FUNC_GET(CmdResetQueryPool)
 FUNC_GET(DestroyQueryPool)
-
+FUNC_GET(GetQueryPoolResults)
+FUNC_GET(CmdResetQueryPool)
 FUNC_GET(CmdWriteTimestamp)
-
 FUNC_GET(GetCalibratedTimestampsEXT)
 FUNC_GET(GetPhysicalDeviceProperties)
 

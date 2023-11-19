@@ -55,8 +55,6 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
 
 #define DISPATCH_TABLE_ELEMENT(func) PFN_vk##func func;
 
-#define VKSP_LAYER_NAME "VK_LAYER_SHADER_PROFILER"
-
 #define PRINT(message, ...)                                                                                            \
     do {                                                                                                               \
         fprintf(stderr, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                          \
@@ -64,9 +62,6 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
     } while (0)
 
 #define DISPATCH(obj) gdispatch[vksp_key(obj)]
-
-#define SPEC_VERSION VK_MAKE_VERSION(1, 3, 0)
-#define ENV_VERSION SPV_ENV_VULKAN_1_3
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES & TYPES **************************************************/
@@ -96,6 +91,7 @@ struct ThreadDispatch {
     VkPipeline pipeline;
     uint32_t groupCountX, groupCountY, groupCountZ;
 };
+
 struct ThreadJob {
     uint64_t timeline_id;
     std::queue<ThreadDispatch> dispatches;
@@ -148,7 +144,6 @@ struct ThreadInfo {
 
 static std::map<VkQueue, ThreadInfo *> QueueToThreadInfo;
 static std::map<VkCommandBuffer, std::vector<ThreadDispatch>> CmdBufferToThreadDispatch;
-
 static uint32_t shader_number = 0;
 
 /*****************************************************************************/
@@ -174,7 +169,7 @@ static const uint32_t get_trace_max_size()
 #endif
 
 /*****************************************************************************/
-/* Queue Thread **************************************************************/
+/* QUEUE THREAD **************************************************************/
 /*****************************************************************************/
 
 static VkResult WaitSemaphore(ThreadInfo *info, ThreadJob *job)
@@ -532,7 +527,7 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
     std::lock_guard<std::recursive_mutex> lock(glock);
     std::string shader_str = std::string("vksp_s") + std::to_string(shader_number++);
 
-    const spv_context context = spvContextCreate(ENV_VERSION);
+    const spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
     spv_text text;
     spv_diagnostic diag;
     const uint32_t *code = pCreateInfo->pCode;
@@ -670,7 +665,7 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     ppEnabledExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
 
     VkDeviceCreateInfo mCreateInfo = *pCreateInfo;
-    mCreateInfo.enabledLayerCount++;
+    mCreateInfo.enabledExtensionCount++;
     mCreateInfo.ppEnabledExtensionNames = ppEnabledExtensionNames.data();
 
     VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
@@ -704,63 +699,6 @@ void VKAPI_CALL vksp_DestroyDevice(VkDevice device, const VkAllocationCallbacks 
     auto DestroyInstance = DISPATCH(device).DestroyDevice;
     gdispatch.erase(vksp_key(device));
     return DestroyInstance(device, pAllocator);
-}
-
-/*****************************************************************************/
-/* ENUMERATION FUNCTIONS *****************************************************/
-/*****************************************************************************/
-
-VkResult VKAPI_CALL vksp_EnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties)
-{
-    std::lock_guard<std::recursive_mutex> lock(glock);
-    if (pPropertyCount)
-        *pPropertyCount = 1;
-
-    if (pProperties) {
-        strcpy(pProperties->layerName, VKSP_LAYER_NAME);
-        strcpy(pProperties->description, "vulkan-shader-profiler github.com/rjodinchr/vulkan-shader-profiler");
-        pProperties->implementationVersion = 1;
-        pProperties->specVersion = SPEC_VERSION;
-    }
-
-    return VK_SUCCESS;
-}
-
-VkResult VKAPI_CALL vksp_EnumerateDeviceLayerProperties(
-    VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount, VkLayerProperties *pProperties)
-{
-    std::lock_guard<std::recursive_mutex> lock(glock);
-    return vksp_EnumerateInstanceLayerProperties(pPropertyCount, pProperties);
-}
-
-VkResult VKAPI_CALL vksp_EnumerateInstanceExtensionProperties(
-    const char *pLayerName, uint32_t *pPropertyCount, VkExtensionProperties *pProperties)
-{
-    std::lock_guard<std::recursive_mutex> lock(glock);
-    if (pLayerName == NULL || strcmp(pLayerName, VKSP_LAYER_NAME)) {
-        return VK_ERROR_LAYER_NOT_PRESENT;
-    }
-
-    if (pPropertyCount)
-        *pPropertyCount = 0;
-    return VK_SUCCESS;
-}
-
-VkResult VKAPI_CALL vksp_EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char *pLayerName,
-    uint32_t *pPropertyCount, VkExtensionProperties *pProperties)
-{
-    std::lock_guard<std::recursive_mutex> lock(glock);
-    if (pLayerName == NULL || strcmp(pLayerName, VKSP_LAYER_NAME)) {
-        if (physicalDevice == VK_NULL_HANDLE)
-            return VK_SUCCESS;
-
-        return DISPATCH(physicalDevice)
-            .EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
-    }
-
-    if (pPropertyCount)
-        *pPropertyCount = 0;
-    return VK_SUCCESS;
 }
 
 /*****************************************************************************/
