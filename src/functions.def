@@ -1,39 +1,48 @@
-#ifndef FUNC_GET
-#define FUNC_GET FUNC
+#ifndef FUNC_INS
+#define FUNC_INS(x) // ignore
+#endif
+#ifndef FUNC_INS_INT
+#define FUNC_INS_INT(x) // ignore
+#endif
+#ifndef FUNC_DEV
+#define FUNC_DEV(x) // ignore
+#endif
+#ifndef FUNC_DEV_INT
+#define FUNC_DEV_INT(x) // ignore
 #endif
 
-// Entry points
-FUNC(GetInstanceProcAddr)
-FUNC(GetDeviceProcAddr)
-
-// Create/Destroy functions
-FUNC(CreateInstance)
-FUNC(DestroyInstance)
-FUNC(CreateDevice)
-FUNC(DestroyDevice)
+// Get/Create/Destroy functions
+FUNC_INS(GetInstanceProcAddr)
+FUNC_INS(CreateInstance)
+FUNC_INS(DestroyInstance)
+FUNC_INS(CreateDevice)
+FUNC_DEV(DestroyDevice)
+FUNC_DEV(GetDeviceProcAddr)
 
 // Functions to intercept for the profiler to work
-FUNC(GetDeviceQueue)
-FUNC(AllocateCommandBuffers)
-FUNC(FreeCommandBuffers)
-FUNC(BeginCommandBuffer)
-FUNC(QueueSubmit)
-FUNC(CmdDispatch)
-FUNC(CmdBindPipeline)
-FUNC(CreateComputePipelines)
-FUNC(CreateShaderModule)
+FUNC_DEV(GetDeviceQueue)
+FUNC_DEV(AllocateCommandBuffers)
+FUNC_DEV(FreeCommandBuffers)
+FUNC_DEV(BeginCommandBuffer)
+FUNC_DEV(QueueSubmit)
+FUNC_DEV(CmdDispatch)
+FUNC_DEV(CmdBindPipeline)
+FUNC_DEV(CreateComputePipelines)
+FUNC_DEV(CreateShaderModule)
 
 // Functions used internally by the profiler
-FUNC_GET(CreateSemaphore)
-FUNC_GET(DestroySemaphore)
-FUNC_GET(WaitSemaphores)
-FUNC_GET(CreateQueryPool)
-FUNC_GET(DestroyQueryPool)
-FUNC_GET(GetQueryPoolResults)
-FUNC_GET(CmdResetQueryPool)
-FUNC_GET(CmdWriteTimestamp)
-FUNC_GET(GetCalibratedTimestampsEXT)
-FUNC_GET(GetPhysicalDeviceProperties)
+FUNC_DEV_INT(CreateSemaphore)
+FUNC_DEV_INT(DestroySemaphore)
+FUNC_DEV_INT(WaitSemaphores)
+FUNC_DEV_INT(CreateQueryPool)
+FUNC_DEV_INT(DestroyQueryPool)
+FUNC_DEV_INT(GetQueryPoolResults)
+FUNC_DEV_INT(CmdResetQueryPool)
+FUNC_DEV_INT(CmdWriteTimestamp)
+FUNC_DEV_INT(GetCalibratedTimestampsEXT)
+FUNC_INS_INT(GetPhysicalDeviceProperties)
 
-#undef FUNC_GET
-#undef FUNC
+#undef FUNC_INS
+#undef FUNC_INS_INT
+#undef FUNC_DEV
+#undef FUNC_DEV_INT

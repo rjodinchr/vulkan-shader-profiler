@@ -27,6 +27,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 
 /*****************************************************************************/
@@ -51,7 +52,12 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
     if (!strcmp(pName, "vk" #func))                                                                                    \
         return (PFN_vkVoidFunction) & vksp_##func;
 
-#define SET_DISPATCH_TABLE(table, func, pointer, gpa) table.func = (PFN_vk##func)gpa(*pointer, "vk" #func);
+#define SET_DISPATCH_TABLE(table, func, pointer, gpa, str, statement)                                                  \
+    table.func = (PFN_vk##func)gpa(*pointer, "vk" #func);                                                              \
+    if (dispatchTable.func == nullptr) {                                                                               \
+        PRINT("Could not trace a " str " because '" #func "' is missing");                                             \
+        statement;                                                                                                     \
+    }
 
 #define DISPATCH_TABLE_ELEMENT(func) PFN_vk##func func;
 
@@ -70,13 +76,17 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
 static std::recursive_mutex glock;
 
 typedef struct DispatchTable_ {
-#define FUNC DISPATCH_TABLE_ELEMENT
+#define FUNC_INS DISPATCH_TABLE_ELEMENT
+#define FUNC_INS_INT DISPATCH_TABLE_ELEMENT
+#define FUNC_DEV DISPATCH_TABLE_ELEMENT
+#define FUNC_DEV_INT DISPATCH_TABLE_ELEMENT
 #include "functions.def"
 } DispatchTable;
 
 template <typename DispatchableType> void *vksp_key(DispatchableType obj) { return *(void **)obj; }
 static std::map<void *, DispatchTable> gdispatch;
 
+static std::set<VkDevice> DeviceNotToTrace;
 static std::map<VkQueue, VkDevice> QueueToDevice;
 static std::map<VkDevice, VkPhysicalDevice> DeviceToPhysicalDevice;
 static std::map<VkDevice, std::vector<std::pair<VkQueue, std::thread>>> QueueThreadPool;
@@ -361,7 +371,7 @@ VkResult VKAPI_CALL vksp_QueueSubmit(VkQueue queue, uint32_t submitCount, const 
         }
         semaphores[eachSubmit].push_back(info->semaphore);
 
-        mSubmits[eachSubmit].signalSemaphoreCount++;
+        mSubmits[eachSubmit].signalSemaphoreCount = semaphores[eachSubmit].size();
         mSubmits[eachSubmit].pSignalSemaphores = semaphores[eachSubmit].data();
 
         VkTimelineSemaphoreSubmitInfo *next = (VkTimelineSemaphoreSubmitInfo *)submit.pNext;
@@ -375,7 +385,7 @@ VkResult VKAPI_CALL vksp_QueueSubmit(VkQueue queue, uint32_t submitCount, const 
             }
             signalValues[eachSubmit].push_back(job->timeline_id);
 
-            next->signalSemaphoreValueCount++;
+            next->signalSemaphoreValueCount = signalValues[eachSubmit].size();
             next->pSignalSemaphoreValues = signalValues[eachSubmit].data();
         } else {
             VkTimelineSemaphoreSubmitInfo timelineInfo;
@@ -587,7 +597,8 @@ VkResult VKAPI_CALL vksp_CreateInstance(
     }
 
     DispatchTable dispatchTable;
-#define FUNC(f) SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa)
+#define FUNC_INS(f) SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_SUCCESS);
+#define FUNC_INS_INT(f) SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_SUCCESS);
 #include "functions.def"
 
     DISPATCH(*pInstance) = dispatchTable;
@@ -665,7 +676,7 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     ppEnabledExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
 
     VkDeviceCreateInfo mCreateInfo = *pCreateInfo;
-    mCreateInfo.enabledExtensionCount++;
+    mCreateInfo.enabledExtensionCount = ppEnabledExtensionNames.size();
     mCreateInfo.ppEnabledExtensionNames = ppEnabledExtensionNames.data();
 
     VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
@@ -674,7 +685,9 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     }
 
     DispatchTable dispatchTable;
-#define FUNC(f) SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa);
+#define FUNC_DEV(f) SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));
+#define FUNC_DEV_INT(f)                                                                                                \
+    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));
 #include "functions.def"
 
     DISPATCH(*pDevice) = dispatchTable;
@@ -707,15 +720,14 @@ void VKAPI_CALL vksp_DestroyDevice(VkDevice device, const VkAllocationCallbacks 
 
 extern "C" {
 
-PFN_vkVoidFunction vksp_GetInstanceProcAddr(VkInstance instance, const char *pName);
-
 PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char *pName)
 {
     std::lock_guard<std::recursive_mutex> lock(glock);
 
-#define FUNC GET_PROC_ADDR
-#define FUNC_GET(f) // ignore
+    if (DeviceNotToTrace.count(device) == 0) {
+#define FUNC_DEV GET_PROC_ADDR
 #include "functions.def"
+    }
 
     return DISPATCH(device).GetDeviceProcAddr(device, pName);
 }
@@ -724,8 +736,7 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetInstanceProcAddr(VkInstance instance, cons
 {
     std::lock_guard<std::recursive_mutex> lock(glock);
 
-#define FUNC GET_PROC_ADDR
-#define FUNC_GET(f) // ignore
+#define FUNC_INS GET_PROC_ADDR
 #include "functions.def"
 
     return DISPATCH(instance).GetInstanceProcAddr(instance, pName);
