@@ -73,6 +73,265 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
 /* GLOBAL VARIABLES & TYPES **************************************************/
 /*****************************************************************************/
 
+static std::string byteToStr[] = {
+    "00",
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "0a",
+    "0b",
+    "0c",
+    "0d",
+    "0e",
+    "0f",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "1a",
+    "1b",
+    "1c",
+    "1d",
+    "1e",
+    "1f",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "2a",
+    "2b",
+    "2c",
+    "2d",
+    "2e",
+    "2f",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "3a",
+    "3b",
+    "3c",
+    "3d",
+    "3e",
+    "3f",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "4a",
+    "4b",
+    "4c",
+    "4d",
+    "4e",
+    "4f",
+    "50",
+    "51",
+    "52",
+    "53",
+    "54",
+    "55",
+    "56",
+    "57",
+    "58",
+    "59",
+    "5a",
+    "5b",
+    "5c",
+    "5d",
+    "5e",
+    "5f",
+    "60",
+    "61",
+    "62",
+    "63",
+    "64",
+    "65",
+    "66",
+    "67",
+    "68",
+    "69",
+    "6a",
+    "6b",
+    "6c",
+    "6d",
+    "6e",
+    "6f",
+    "70",
+    "71",
+    "72",
+    "73",
+    "74",
+    "75",
+    "76",
+    "77",
+    "78",
+    "79",
+    "7a",
+    "7b",
+    "7c",
+    "7d",
+    "7e",
+    "7f",
+    "80",
+    "81",
+    "82",
+    "83",
+    "84",
+    "85",
+    "86",
+    "87",
+    "88",
+    "89",
+    "8a",
+    "8b",
+    "8c",
+    "8d",
+    "8e",
+    "8f",
+    "90",
+    "91",
+    "92",
+    "93",
+    "94",
+    "95",
+    "96",
+    "97",
+    "98",
+    "99",
+    "9a",
+    "9b",
+    "9c",
+    "9d",
+    "9e",
+    "9f",
+    "a0",
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "a7",
+    "a8",
+    "a9",
+    "aa",
+    "ab",
+    "ac",
+    "ad",
+    "ae",
+    "af",
+    "b0",
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5",
+    "b6",
+    "b7",
+    "b8",
+    "b9",
+    "ba",
+    "bb",
+    "bc",
+    "bd",
+    "be",
+    "bf",
+    "c0",
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c5",
+    "c6",
+    "c7",
+    "c8",
+    "c9",
+    "ca",
+    "cb",
+    "cc",
+    "cd",
+    "ce",
+    "cf",
+    "d0",
+    "d1",
+    "d2",
+    "d3",
+    "d4",
+    "d5",
+    "d6",
+    "d7",
+    "d8",
+    "d9",
+    "da",
+    "db",
+    "dc",
+    "dd",
+    "de",
+    "df",
+    "e0",
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "ea",
+    "eb",
+    "ec",
+    "ed",
+    "ee",
+    "ef",
+    "f0",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "fa",
+    "fb",
+    "fc",
+    "fd",
+    "fe",
+    "ff",
+};
+
 static std::recursive_mutex glock;
 
 typedef struct DispatchTable_ {
@@ -99,6 +358,7 @@ static std::map<VkShaderModule, std::string> ShaderModuleToString;
 struct ThreadDispatch {
     VkQueryPool query_pool;
     VkPipeline pipeline;
+    uint64_t dispatchId;
     uint32_t groupCountX, groupCountY, groupCountZ;
 };
 
@@ -294,8 +554,8 @@ static void GenerateTrace(ThreadInfo *info, ThreadDispatch &cmd)
         + std::to_string(cmd.groupCountY) + "." + std::to_string(cmd.groupCountZ);
     TRACE_EVENT_BEGIN(VKSP_PERFETTO_CATEGORY, perfetto::DynamicString(name), perfetto::Track((uintptr_t)info->queue),
         (uint64_t)start, "groupCountX", cmd.groupCountX, "groupCountY", cmd.groupCountY, "groupCountZ", cmd.groupCountZ,
-        "shader", ShaderModuleToString[PipelineToShaderModule[cmd.pipeline]], "shader_name",
-        PipelineToShaderModuleName[cmd.pipeline]);
+        "dispatchId", cmd.dispatchId, "shader", ShaderModuleToString[PipelineToShaderModule[cmd.pipeline]],
+        "shader_name", PipelineToShaderModuleName[cmd.pipeline]);
     TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY, perfetto::Track((uintptr_t)info->queue), (uint64_t)end);
 }
 
@@ -463,15 +723,19 @@ VkResult VKAPI_CALL vksp_BeginCommandBuffer(VkCommandBuffer commandBuffer, const
     return DISPATCH(CmdBufferToDevice[commandBuffer]).BeginCommandBuffer(commandBuffer, pBeginInfo);
 }
 
+static uint64_t dispatchId = 0;
 void VKAPI_CALL vksp_CmdDispatch(
     VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
 {
     std::lock_guard<std::recursive_mutex> lock(glock);
-    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdDispatch", "commandBuffer", (void *)commandBuffer, "groupCountX",
-        groupCountX, "groupCountY", groupCountY, "groupCountZ", groupCountZ);
+    auto device = CmdBufferToDevice[commandBuffer];
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdDispatch", "device", (void *)device, "commandBuffer",
+        (void *)commandBuffer, "groupCountX", groupCountX, "groupCountY", groupCountY, "groupCountZ", groupCountZ,
+        "dispatchId", dispatchId);
 
     ThreadDispatch dispatch = {
         .pipeline = CmdBufferToPipeline[commandBuffer],
+        .dispatchId = dispatchId++,
         .groupCountX = groupCountX,
         .groupCountY = groupCountY,
         .groupCountZ = groupCountZ,
@@ -485,7 +749,7 @@ void VKAPI_CALL vksp_CmdDispatch(
         NB_TIMESTAMP,
         0,
     };
-    auto &d = DISPATCH(CmdBufferToDevice[commandBuffer]);
+    auto &d = DISPATCH(device);
     auto res
         = d.CreateQueryPool(CmdBufferToDevice[commandBuffer], &query_pool_create_info, nullptr, &dispatch.query_pool);
     if (res != VK_SUCCESS) {
@@ -517,8 +781,26 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     VkPipeline *pPipelines)
 {
     std::lock_guard<std::recursive_mutex> lock(glock);
-    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "createInfoCount",
-        createInfoCount);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "module",
+        (void *)pCreateInfos->stage.module, "createInfoCount", createInfoCount);
+
+    auto specializationInfo = pCreateInfos->stage.pSpecializationInfo;
+    if (specializationInfo != nullptr) {
+        std::string pData = "";
+        for (unsigned i = 0; i < specializationInfo->dataSize; i++) {
+            pData += byteToStr[((unsigned char *)specializationInfo->pData)[i]];
+        }
+        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-specialization", "module",
+            (void *)pCreateInfos->stage.module, "mapEntryCount", specializationInfo->mapEntryCount, "dataSize",
+            specializationInfo->dataSize, "pData", perfetto::DynamicString(pData));
+
+        for (unsigned i = 0; i < specializationInfo->mapEntryCount; i++) {
+            auto &mapEntry = specializationInfo->pMapEntries[i];
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-MapEntry", "module",
+                (void *)pCreateInfos->stage.module, "constantID", mapEntry.constantID, "offset", mapEntry.offset,
+                "size", mapEntry.size);
+        }
+    }
 
     VkResult result = DISPATCH(device).CreateComputePipelines(
         device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
@@ -560,9 +842,201 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
 
     VkResult result = DISPATCH(device).CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
 
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-module", "device", (void *)device, "shader",
+        perfetto::DynamicString(shader_str), "module", (void *)*pShaderModule);
+
     ShaderModuleToString[*pShaderModule] = shader_str;
 
     TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY);
+    return result;
+}
+
+void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
+    const VkWriteDescriptorSet *pDescriptorWrites, uint32_t descriptorCopyCount,
+    const VkCopyDescriptorSet *pDescriptorCopies)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets", "device", (void *)device, "descriptorWriteCount",
+        descriptorWriteCount, "descriptorCopyCount", descriptorCopyCount);
+
+    for (unsigned i = 0; i < descriptorWriteCount; i++) {
+        switch (pDescriptorWrites[i].descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
+                (void *)pDescriptorWrites[i].dstSet, "dstBinding", pDescriptorWrites[i].dstBinding, "descriptorCount",
+                pDescriptorWrites[i].descriptorCount, "descriptorType", pDescriptorWrites[i].descriptorType, "buffer",
+                (void *)pDescriptorWrites[i].pBufferInfo->buffer, "offset", pDescriptorWrites[i].pBufferInfo->offset,
+                "range", pDescriptorWrites[i].pBufferInfo->range);
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
+                (void *)pDescriptorWrites[i].dstSet, "dstBinding", pDescriptorWrites[i].dstBinding, "descriptorCount",
+                pDescriptorWrites[i].descriptorCount, "descriptorType", (void *)pDescriptorWrites[i].descriptorType,
+                "imageLayout", pDescriptorWrites[i].pImageInfo->imageLayout, "imageView",
+                (void *)pDescriptorWrites[i].pImageInfo->imageView);
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
+                (void *)pDescriptorWrites[i].dstSet, "dstBinding", pDescriptorWrites[i].dstBinding, "descriptorCount",
+                pDescriptorWrites[i].descriptorCount, "descriptorType", pDescriptorWrites[i].descriptorType, "sampler",
+                (void *)pDescriptorWrites[i].pImageInfo->sampler);
+            break;
+        default:
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "device", (void *)device,
+                "dstSet", (void *)pDescriptorWrites[i].dstSet, "dstBinding", pDescriptorWrites[i].dstBinding,
+                "descriptorCount", pDescriptorWrites[i].descriptorCount, "descriptorType",
+                pDescriptorWrites[i].descriptorType);
+            break;
+        }
+    }
+
+    DISPATCH(device).UpdateDescriptorSets(
+        device, descriptorWriteCount, pDescriptorWrites, descriptorCopyCount, pDescriptorCopies);
+}
+
+void VKAPI_CALL vksp_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+    VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
+    uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    auto device = CmdBufferToDevice[commandBuffer];
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdBindDescriptorSets", "device", (void *)device, "commandBuffer",
+        (void *)commandBuffer, "pipelineBindPoint", pipelineBindPoint, "firstSet", firstSet, "descriptorSetCount",
+        descriptorSetCount, "dynamicOffsetCount", dynamicOffsetCount);
+
+    for (unsigned i = 0; i < descriptorSetCount; i++) {
+        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCmdBindDescriptorSets-ds", "commandBuffer",
+            (void *)commandBuffer, "pipelineBindPoint", pipelineBindPoint, "firstSet", firstSet, "dstSet",
+            (void *)pDescriptorSets[i], "index", i);
+    }
+
+    DISPATCH(device).CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount,
+        pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
+}
+
+VkResult VKAPI_CALL vksp_CreateBuffer(
+    VkDevice device, const VkBufferCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateBuffer", "device", (void *)device);
+
+    auto result = DISPATCH(device).CreateBuffer(device, pCreateInfo, pAllocator, pBuffer);
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateBuffer-result", "buffer", (void *)*pBuffer, "flags",
+        pCreateInfo->flags, "size", pCreateInfo->size, "usage", pCreateInfo->usage, "sharingMode",
+        pCreateInfo->sharingMode, "queueFamilyIndexCount", pCreateInfo->queueFamilyIndexCount);
+
+    return result;
+}
+
+void VKAPI_CALL vksp_CmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
+    VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void *pValues)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    auto device = CmdBufferToDevice[commandBuffer];
+    std::string pValuesStr = "";
+    for (unsigned i = 0; i < size; i++) {
+        pValuesStr += byteToStr[((unsigned char *)pValues)[i]];
+    }
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdPushConstants", "device", (void *)device, "commandBuffer",
+        (void *)commandBuffer, "stageFlags", stageFlags, "offset", offset, "size", size, "pValues",
+        perfetto::DynamicString(pValuesStr));
+
+    DISPATCH(device).CmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
+}
+
+VkResult VKAPI_CALL vksp_AllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
+    const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkAllocateMemory", "device", (void *)device);
+
+    auto result = DISPATCH(device).AllocateMemory(device, pAllocateInfo, pAllocator, pMemory);
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkAllocateMemory-mem", "memory", (void *)*pMemory, "size",
+        pAllocateInfo->allocationSize, "type", pAllocateInfo->memoryTypeIndex);
+
+    return result;
+}
+
+VkResult VKAPI_CALL vksp_BindBufferMemory(
+    VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBindBufferMemory", "device", (void *)device, "buffer", (void *)buffer,
+        "memory", (void *)memory, "offset", memoryOffset);
+
+    return DISPATCH(device).BindBufferMemory(device, buffer, memory, memoryOffset);
+}
+
+VkResult VKAPI_CALL vksp_CreateImageView(
+    VkDevice                                    device,
+    const VkImageViewCreateInfo*                pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkImageView*                                pView) {
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImageView", "device", (void *)device);
+
+    auto result = DISPATCH(device).CreateImageView(device, pCreateInfo, pAllocator, pView);
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateImageView-result", "pView", (void *)*pView, "image",
+        (void *)pCreateInfo->image, "flags", pCreateInfo->flags, "format", pCreateInfo->format, "viewType",
+        pCreateInfo->viewType, "components_a", pCreateInfo->components.a, "components_b", pCreateInfo->components.b,
+        "components_g", pCreateInfo->components.g, "components_r", pCreateInfo->components.r, "aspectMask",
+        pCreateInfo->subresourceRange.aspectMask, "baseMipLevel", pCreateInfo->subresourceRange.baseMipLevel,
+        "baseArrayLayer", pCreateInfo->subresourceRange.baseArrayLayer, "levelCount",
+        pCreateInfo->subresourceRange.levelCount, "layerCount", pCreateInfo->subresourceRange.layerCount);
+
+    return result;
+}
+
+VkResult VKAPI_CALL vksp_BindImageMemory(
+    VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBindImageMemory", "device", (void *)device, "image", (void *)image, "memory",
+        (void *)memory, "offset", memoryOffset);
+
+    return DISPATCH(device).BindImageMemory(device, image, memory, memoryOffset);
+}
+
+VkResult VKAPI_CALL vksp_CreateImage(
+    VkDevice device, const VkImageCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkImage *pImage)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImage", "device", (void *)device);
+
+    auto result = DISPATCH(device).CreateImage(device, pCreateInfo, pAllocator, pImage);
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateImage-result", "image", (void *)*pImage, "flags",
+        pCreateInfo->flags, "imageType", pCreateInfo->imageType, "format", pCreateInfo->format, "width",
+        pCreateInfo->extent.width, "depth", pCreateInfo->extent.depth, "height", pCreateInfo->extent.height,
+        "mipLevels", pCreateInfo->mipLevels, "arrayLayers", pCreateInfo->arrayLayers, "samples", pCreateInfo->samples,
+        "tiling", pCreateInfo->tiling, "usage", pCreateInfo->usage, "sharingMode", pCreateInfo->sharingMode,
+        "queueFamilyIndexCount", pCreateInfo->queueFamilyIndexCount, "initialLayout", pCreateInfo->initialLayout);
+
+    return result;
+}
+
+VkResult VKAPI_CALL vksp_CreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkSampler *pSampler)
+{
+    std::lock_guard<std::recursive_mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateSampler", "device", (void *)device);
+
+    auto result = DISPATCH(device).CreateSampler(device, pCreateInfo, pAllocator, pSampler);
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateSampler-result", "sampler", (void *)*pSampler, "flags",
+        pCreateInfo->flags, "magFilter", pCreateInfo->magFilter, "minFilter", pCreateInfo->minFilter, "mipmapMode",
+        pCreateInfo->mipmapMode, "addressModeU", pCreateInfo->addressModeU, "addressModeV", pCreateInfo->addressModeV,
+        "addressModeW", pCreateInfo->addressModeW, "mipLodBias", pCreateInfo->mipLodBias, "anisotropyEnable",
+        pCreateInfo->anisotropyEnable, "maxAnisotropy", pCreateInfo->maxAnisotropy, "compareEnable",
+        pCreateInfo->compareEnable, "compareOp", pCreateInfo->compareOp, "minLod", pCreateInfo->minLod, "maxLod",
+        pCreateInfo->maxLod, "borderColor", pCreateInfo->borderColor, "unnormalizedCoordinates",
+        pCreateInfo->unnormalizedCoordinates);
+
     return result;
 }
 
@@ -651,8 +1125,14 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
 {
     std::lock_guard<std::recursive_mutex> lock(glock);
-    VkLayerDeviceCreateInfo *layerCreateInfo = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateDevice");
 
+    std::string ppEnabledExtensionNamesConcat;
+    for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+        ppEnabledExtensionNamesConcat += "." + std::string(pCreateInfo->ppEnabledExtensionNames[i]);
+    }
+
+    VkLayerDeviceCreateInfo *layerCreateInfo = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
     while (layerCreateInfo
         && (layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO
             || layerCreateInfo->function != VK_LAYER_LINK_INFO)) {
@@ -683,6 +1163,9 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     if (ret != VK_SUCCESS) {
         return ret;
     }
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateDevice-enabled", "device", (void *)*pDevice,
+        "ppEnabledExtensionNames", ppEnabledExtensionNamesConcat);
 
     DispatchTable dispatchTable;
 #define FUNC_DEV(f) SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));

@@ -20,29 +20,20 @@ set(CMAKE_CXX_STANDARD 17)
 if (NOT PERFETTO_SDK_PATH)
   message(FATAL_ERROR "PERFETTO_SDK_PATH not defined")
 endif ()
+if (NOT PERFETTO_TRACE_PROCESSOR_LIB)
+  message(FATAL_ERROR "PERFETTO_TRACE_PROCESSOR_LIB not defined")
+endif()
+if (NOT SPIRV_TOOLS_LIBRARY)
+  message(FATAL_ERROR "SPIRV_TOOLS_LIBRARY not defined")
+endif()
+if (NOT SPIRV_TOOLS_OPT_LIBRARY)
+  message(FATAL_ERROR "SPIRV_TOOLS_OPT_LIBRARY not defined")
+endif()
 
 find_package(Vulkan)
 message(STATUS "Vulkan_INCLUDE_DIRS = '${Vulkan_INCLUDE_DIRS}'")
+message(STATUS "Vulkan_LIBRARIES = '${Vulkan_LIBRARIES}'")
 
-set (SOURCES src/vulkan-shader-profiler.cpp ${PERFETTO_SDK_PATH}/perfetto.cc)
-include_directories(${Vulkan_INCLUDE_DIRS} ${PERFETTO_SDK_PATH})
-
-add_library (vulkan-shader-profiler MODULE ${SOURCES})
-target_link_libraries (vulkan-shader-profiler SPIRV-Tools)
-
-set(BACKEND "InProcess"
-  CACHE STRING "Select perfetto backend")
-set(BACKEND_OPTIONS
-  System
-  InProcess
-)
-set_property(CACHE BACKEND PROPERTY STRINGS ${BACKEND_OPTIONS})
-if (${BACKEND} STREQUAL InProcess)
-  target_compile_definitions(vulkan-shader-profiler PUBLIC BACKEND_INPROCESS)
-endif()
-
-set(TRACE_MAX_SIZE 1024 CACHE STRING "Perfetto trace maximum size")
-target_compile_options(vulkan-shader-profiler PUBLIC "-DTRACE_MAX_SIZE=${TRACE_MAX_SIZE}")
-
-set(TRACE_DEST "vulkan-shader-profiler.trace" CACHE STRING "Perfetto trace filename")
-target_compile_options(vulkan-shader-profiler PUBLIC "-DTRACE_DEST=\"${TRACE_DEST}\"")
+add_subdirectory(layer)
+add_subdirectory(extractor)
+add_subdirectory(runner)
