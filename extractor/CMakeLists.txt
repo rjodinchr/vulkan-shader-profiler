@@ -20,10 +20,7 @@ target_link_libraries(vksp-spirv ${SPIRV_TOOLS_OPT_LIBRARY} ${SPIRV_TOOLS_LIBRAR
 
 add_executable(vulkan-shader-profiler-extractor extractor.cpp)
 target_link_libraries(vulkan-shader-profiler-extractor ${PERFETTO_TRACE_PROCESSOR_LIB} vksp-spirv sqlite3)
-target_include_directories(vulkan-shader-profiler-extractor PUBLIC ${Vulkan_INCLUDE_DIRS})
-if (PERFETTO_INTERNAL_INCLUDE_PATH)
-  target_include_directories(vulkan-shader-profiler-extractor PUBLIC ${PERFETTO_INTERNAL_INCLUDE_PATH})
-endif()
+target_include_directories(vulkan-shader-profiler-extractor PUBLIC ${Vulkan_INCLUDE_DIRS} ${PERFETTO_INTERNAL_INCLUDE_PATH})
 if (PERFETTO_GEN_INCLUDE_PATH)
   target_include_directories(vulkan-shader-profiler-extractor PUBLIC ${PERFETTO_GEN_INCLUDE_PATH})
 endif()

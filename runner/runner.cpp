@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <vulkan/vulkan.h>
 
+#include <algorithm>
 #include <chrono>
 #include <map>
 #include <set>
@@ -48,6 +49,8 @@
         }                                                                                                              \
     } while (0)
 
+#define CHECK_VK(result, message, ...) CHECK(result == VK_SUCCESS, message " (result: %i)", ##__VA_ARGS__, result)
+
 static std::map<char, uint8_t> charToByte
     = { { '0', 0 }, { '1', 1 }, { '2', 2 }, { '3', 3 }, { '4', 4 }, { '5', 5 }, { '6', 6 }, { '7', 7 }, { '8', 8 },
           { '9', 9 }, { 'a', 10 }, { 'b', 11 }, { 'c', 12 }, { 'd', 13 }, { 'e', 14 }, { 'f', 15 } };
@@ -55,8 +58,12 @@ static std::map<char, uint8_t> charToByte
 static bool gVerbose = false;
 static std::string gInput = "";
 static uint32_t gColdRun = 0, gHotRun = 1;
+static VkBuffer gCounterBuffer;
+static VkDeviceMemory gCounterMemory;
 
-int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device, VkQueue &queue,
+static const uint32_t gNbGpuTimestamps = 3;
+
+static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device, VkQueue &queue,
     VkCommandBuffer &cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, const char *enabledExtensionNames)
 {
     VkResult res;
@@ -76,15 +83,15 @@ int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device,
 
     VkInstance instance;
     res = vkCreateInstance(&info, nullptr, &instance);
-    CHECK(res == VK_SUCCESS, "Could not create vulkan instance");
+    CHECK_VK(res, "Could not create vulkan instance");
 
     uint32_t nbDevices;
     res = vkEnumeratePhysicalDevices(instance, &nbDevices, nullptr);
-    CHECK(res == VK_SUCCESS, "Could not enumerate physical devices");
+    CHECK_VK(res, "Could not enumerate physical devices");
 
     std::vector<VkPhysicalDevice> physicalDevices(nbDevices);
     res = vkEnumeratePhysicalDevices(instance, &nbDevices, physicalDevices.data());
-    CHECK(res == VK_SUCCESS, "Could not enumerate physical devices (second call)");
+    CHECK_VK(res, "Could not enumerate physical devices (second call)");
     pDevice = physicalDevices.front();
 
     vkGetPhysicalDeviceMemoryProperties(pDevice, &memProperties);
@@ -145,7 +152,7 @@ int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device,
     };
 
     res = vkCreateDevice(pDevice, &createInfo, nullptr, &device);
-    CHECK(res == VK_SUCCESS, "Could not create device");
+    CHECK_VK(res, "Could not create device");
 
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &queue);
 
@@ -153,24 +160,24 @@ int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device,
     const VkCommandPoolCreateInfo pCreateInfo
         = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, 0, queueFamilyIndex };
     res = vkCreateCommandPool(device, &pCreateInfo, nullptr, &cmdPool);
-    CHECK(res == VK_SUCCESS, "Could not create command pool");
+    CHECK_VK(res, "Could not create command pool");
 
     const VkCommandBufferAllocateInfo pAllocateInfo
         = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, cmdPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1 };
     res = vkAllocateCommandBuffers(device, &pAllocateInfo, &cmdBuffer);
-    CHECK(res == VK_SUCCESS, "Could not allocate command buffer");
+    CHECK_VK(res, "Could not allocate command buffer");
 
     const VkCommandBufferBeginInfo pBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr };
     res = vkBeginCommandBuffer(cmdBuffer, &pBeginInfo);
-    CHECK(res == VK_SUCCESS, "Could not begin command buffer");
+    CHECK_VK(res, "Could not begin command buffer");
 
     return 0;
 }
 
-bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtools::vksp_descriptor_set> &ds,
+static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtools::vksp_descriptor_set> &ds,
     std::vector<spvtools::vksp_push_constant> &pc, std::vector<spvtools::vksp_specialization_map_entry> &me,
-    spvtools::vksp_configuration &config)
+    std::vector<spvtools::vksp_counter> &counters, spvtools::vksp_configuration &config)
 {
     FILE *input = fopen(gInput.c_str(), "r");
     fseek(input, 0, SEEK_END);
@@ -202,7 +209,7 @@ bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtools::vks
     }
 
     spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
-    opt.RegisterPass(spvtools::CreateExtractVkspReflectInfoPass(&pc, &ds, &me, &config));
+    opt.RegisterPass(spvtools::CreateExtractVkspReflectInfoPass(&pc, &ds, &me, &counters, &config));
     opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
     spvtools::OptimizerOptions options;
     options.set_run_validator(false);
@@ -232,31 +239,19 @@ bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtools::vks
     return true;
 }
 
-struct vksp_counter {
-    VkBuffer buffer;
-    VkDeviceMemory memory;
-    const char *name;
-};
-
-uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
-    VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet,
-    std::vector<vksp_counter> &counters)
+static uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, VkDevice device,
+    VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
     VkResult res;
-    vksp_counter counter;
-    bool bCounter = ds.buffer.vksp_counter != nullptr;
-    if (bCounter) {
-        ds.buffer.size = sizeof(uint64_t) * 2;
-        ds.buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        ds.buffer.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-        counter.name = ds.buffer.vksp_counter;
-    }
+
+    bool bCounter = ds.type == VKSP_DESCRIPTOR_TYPE_STORAGE_BUFFER_COUNTER;
+    ds.type &= VKSP_DESCRIPTOR_TYPE_STORAGE_BUFFER_COUNTER_MASK;
 
     VkBuffer buffer;
     const VkBufferCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, ds.buffer.flags,
         ds.buffer.size, ds.buffer.usage, (VkSharingMode)ds.buffer.sharingMode, 0, nullptr };
     res = vkCreateBuffer(device, &pCreateInfo, nullptr, &buffer);
-    CHECK(res == VK_SUCCESS, "Could not create buffer");
+    CHECK_VK(res, "Could not create buffer");
 
     if (bCounter) {
         VkMemoryRequirements memreqs;
@@ -274,8 +269,7 @@ uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, VkDevic
             }
         }
         CHECK(memoryTypeFound, "Could not find a memoryType for counter");
-        ds.buffer.memorySize = memreqs.size;
-        counter.buffer = buffer;
+        CHECK(ds.buffer.memorySize == memreqs.size, "memorySize for counter buffer does not match");
     }
 
     const VkMemoryAllocateInfo pAllocateInfo = {
@@ -287,19 +281,12 @@ uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, VkDevic
 
     VkDeviceMemory memory;
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
-    CHECK(res == VK_SUCCESS, "Could not allocate memory for buffer");
+    CHECK_VK(res, "Could not allocate memory for buffer");
 
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
-    CHECK(res == VK_SUCCESS, "Could not bind buffer and memory");
+    CHECK_VK(res, "Could not bind buffer and memory");
 
-    VkDeviceSize range = ds.buffer.range;
-    if (bCounter) {
-        range = VK_WHOLE_SIZE;
-        counter.memory = memory;
-        counters.push_back(counter);
-    }
-
-    const VkDescriptorBufferInfo bufferInfo = { buffer, ds.buffer.offset, range };
+    const VkDescriptorBufferInfo bufferInfo = { buffer, ds.buffer.offset, ds.buffer.range };
     const VkWriteDescriptorSet write = {
         VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         nullptr,
@@ -314,11 +301,16 @@ uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, VkDevic
     };
     vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
+    if (bCounter) {
+        gCounterBuffer = buffer;
+        gCounterMemory = memory;
+    }
+
     return 0;
 }
 
-uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
-    VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
+static uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice device,
+    VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
     VkResult res;
 
@@ -330,7 +322,7 @@ uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice
         (VkSharingMode)ds.image.sharingMode, ds.image.queueFamilyIndexCount, nullptr,
         (VkImageLayout)ds.image.initialLayout };
     res = vkCreateImage(device, &pCreateInfo, nullptr, &image);
-    CHECK(res == VK_SUCCESS, "Could not create image");
+    CHECK_VK(res, "Could not create image");
 
     const VkMemoryAllocateInfo pAllocateInfo = {
         VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -341,10 +333,10 @@ uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice
 
     VkDeviceMemory memory;
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
-    CHECK(res == VK_SUCCESS, "Could not allocate memory for image");
+    CHECK_VK(res, "Could not allocate memory for image");
 
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
-    CHECK(res == VK_SUCCESS, "Could not bind image and memory");
+    CHECK_VK(res, "Could not bind image and memory");
 
     VkImageView image_view;
     VkComponentMapping components
@@ -355,7 +347,7 @@ uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice
     const VkImageViewCreateInfo pViewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, nullptr, ds.image.viewFlags,
         image, (VkImageViewType)ds.image.viewType, (VkFormat)ds.image.viewFormat, components, subresourceRange };
     res = vkCreateImageView(device, &pViewInfo, nullptr, &image_view);
-    CHECK(res == VK_SUCCESS, "Could not create image view");
+    CHECK_VK(res, "Could not create image view");
 
     const VkDescriptorImageInfo imageInfo = { VK_NULL_HANDLE, image_view, (VkImageLayout)ds.image.imageLayout };
     const VkWriteDescriptorSet write = {
@@ -375,8 +367,8 @@ uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice
     return 0;
 }
 
-uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
-    VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
+static uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds, VkDevice device,
+    VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
     VkResult res;
     VkSampler sampler;
@@ -387,7 +379,7 @@ uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds, VkDevi
         ds.sampler.fMaxAnisotropy, ds.sampler.compareEnable, (VkCompareOp)ds.sampler.compareOp, ds.sampler.fMinLod,
         ds.sampler.fMaxLod, (VkBorderColor)ds.sampler.borderColor, ds.sampler.unnormalizedCoordinates };
     res = vkCreateSampler(device, &pCreateInfo, nullptr, &sampler);
-    CHECK(res == VK_SUCCESS, "Could not create sampler");
+    CHECK_VK(res, "Could not create sampler");
 
     const VkDescriptorImageInfo imageInfo = { sampler, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED };
     const VkWriteDescriptorSet write = {
@@ -407,14 +399,14 @@ uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds, VkDevi
     return 0;
 }
 
-uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescriptorSet> &descSet,
+static uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescriptorSet> &descSet,
     std::vector<spvtools::vksp_descriptor_set> &dsVector, std::vector<VkDescriptorSetLayout> &descSetLayoutVector)
 {
     VkResult res;
     std::map<VkDescriptorType, uint32_t> descTypeCount;
 
     for (auto &ds : dsVector) {
-        VkDescriptorType type = (VkDescriptorType)ds.type;
+        VkDescriptorType type = (VkDescriptorType)(ds.type & VKSP_DESCRIPTOR_TYPE_STORAGE_BUFFER_COUNTER_MASK);
         if (descTypeCount.count(type) == 0) {
             descTypeCount[type] = 1;
         } else {
@@ -427,7 +419,7 @@ uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescriptorSet> &
             if (ds.ds != i) {
                 continue;
             }
-            VkDescriptorType type = (VkDescriptorType)ds.type;
+            VkDescriptorType type = (VkDescriptorType)(ds.type & VKSP_DESCRIPTOR_TYPE_STORAGE_BUFFER_COUNTER_MASK);
 
             VkDescriptorSetLayoutBinding descSetLayoutBinding
                 = { ds.binding, type, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr };
@@ -437,7 +429,7 @@ uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescriptorSet> &
         const VkDescriptorSetLayoutCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             nullptr, 0, (uint32_t)descSetLayoutBindings.size(), descSetLayoutBindings.data() };
         res = vkCreateDescriptorSetLayout(device, &pCreateInfo, nullptr, &descSetLayout);
-        CHECK(res == VK_SUCCESS, "Count not create descriptor set layout");
+        CHECK_VK(res, "Count not create descriptor set layout");
 
         descSetLayoutVector.push_back(descSetLayout);
     }
@@ -452,17 +444,17 @@ uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescriptorSet> &
               (uint32_t)descSet.size(), (uint32_t)descPoolSize.size(), descPoolSize.data() };
     VkDescriptorPool descPool;
     res = vkCreateDescriptorPool(device, &pCreateInfo, nullptr, &descPool);
-    CHECK(res == VK_SUCCESS, "Could not create descriptor pool");
+    CHECK_VK(res, "Could not create descriptor pool");
 
     const VkDescriptorSetAllocateInfo pAllocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr,
         descPool, (uint32_t)descSetLayoutVector.size(), descSetLayoutVector.data() };
     res = vkAllocateDescriptorSets(device, &pAllocateInfo, descSet.data());
-    CHECK(res == VK_SUCCESS, "Could not allocate descriptor sets");
+    CHECK_VK(res, "Could not allocate descriptor sets");
 
     return 0;
 }
 
-uint32_t count_descriptor_set(std::vector<spvtools::vksp_descriptor_set> dsVector)
+static uint32_t count_descriptor_set(std::vector<spvtools::vksp_descriptor_set> dsVector)
 {
     std::set<uint32_t> ds_set;
     for (auto &ds : dsVector) {
@@ -471,7 +463,7 @@ uint32_t count_descriptor_set(std::vector<spvtools::vksp_descriptor_set> dsVecto
     return ds_set.size();
 }
 
-uint32_t handle_push_constant(std::vector<spvtools::vksp_push_constant> &pcVector, VkPushConstantRange &range,
+static uint32_t handle_push_constant(std::vector<spvtools::vksp_push_constant> &pcVector, VkPushConstantRange &range,
     VkCommandBuffer cmdBuffer, VkPipelineLayout pipelineLayout)
 {
     std::vector<uint8_t> pValues(range.size);
@@ -494,7 +486,7 @@ uint32_t handle_push_constant(std::vector<spvtools::vksp_push_constant> &pcVecto
     return 0;
 }
 
-uint32_t allocate_pipeline_layout(VkDevice device, std::vector<spvtools::vksp_push_constant> &pcVector,
+static uint32_t allocate_pipeline_layout(VkDevice device, std::vector<spvtools::vksp_push_constant> &pcVector,
     std::vector<VkPushConstantRange> &pcRanges, std::vector<VkDescriptorSetLayout> &descSetLayoutVector,
     VkPipelineLayout &pipelineLayout)
 {
@@ -504,12 +496,12 @@ uint32_t allocate_pipeline_layout(VkDevice device, std::vector<spvtools::vksp_pu
         (uint32_t)descSetLayoutVector.size(), descSetLayoutVector.data(), (uint32_t)pcRanges.size(), pcRanges.data() };
 
     res = vkCreatePipelineLayout(device, &pCreateInfo, nullptr, &pipelineLayout);
-    CHECK(res == VK_SUCCESS, "Could not create pipeline layout");
+    CHECK_VK(res, "Could not create pipeline layout");
 
     return 0;
 }
 
-uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayout pipelineLayout, VkDevice device,
+static uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayout pipelineLayout, VkDevice device,
     VkCommandBuffer cmdBuffer, std::vector<spvtools::vksp_specialization_map_entry> &meVector,
     spvtools::vksp_configuration &config, VkPipeline &pipeline)
 {
@@ -518,7 +510,7 @@ uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayout pipel
     const VkShaderModuleCreateInfo shaderModuleCreateInfo
         = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, shader.size() * sizeof(uint32_t), shader.data() };
     res = vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &shaderModule);
-    CHECK(res == VK_SUCCESS, "Could not create shader module");
+    CHECK_VK(res, "Could not create shader module");
 
     std::vector<VkSpecializationMapEntry> mapEntries;
     for (auto &me : meVector) {
@@ -550,16 +542,22 @@ uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayout pipel
             config.entryPoint, &specializationInfo },
         pipelineLayout, VK_NULL_HANDLE, 0 };
     res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pCreateInfo, nullptr, &pipeline);
-    CHECK(res == VK_SUCCESS, "Could not create compute pipeline");
+    CHECK_VK(res, "Could not create compute pipeline");
 
     vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
     return 0;
 }
 
-void print_time(uint64_t time, const char *prefix, const char *message, bool newLine = true)
+static void print_prefix(uint32_t prefix_max_size, const char *prefix, uint32_t message_max_size, const char *message)
 {
-    printf("%s %*s: ", prefix, 8, message);
+    printf("[%*s] %*s: ", prefix_max_size, prefix, message_max_size, message);
+}
+
+static void print_time(uint64_t time, const char *prefix, uint32_t prefix_max_size, const char *message,
+    uint32_t message_max_size, bool newLine = true)
+{
+    print_prefix(prefix_max_size, prefix, message_max_size, message);
     const uint64_t second = 1000 * 1000 * 1000;
     const uint64_t msecond = 1000 * 1000;
     const uint64_t usecond = 1000;
@@ -587,47 +585,47 @@ void print_time(uint64_t time, const char *prefix, const char *message, bool new
     } else if (time_us) {
         printf("%*lu.%.3lu us", 3, time_us, time_ns);
     } else {
-        printf("%*lu ns", 3, time_ns);
+        printf("%*lu ns", 7, time_ns);
     }
     if (newLine) {
         printf("\n");
     }
 }
 
-uint32_t execute(VkPhysicalDevice pDevice, VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue,
-    spvtools::vksp_configuration &config, std::vector<vksp_counter> &counters)
+static uint32_t counters_size(std::vector<spvtools::vksp_counter> &counters)
+{
+    return sizeof(uint64_t) * (2 + counters.size());
+}
+
+static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue, spvtools::vksp_configuration &config,
+    std::vector<spvtools::vksp_counter> &counters, uint64_t *gpu_timestamps,
+    std::chrono::steady_clock::time_point *host_timestamps)
 {
     VkResult res;
 
-    VkPhysicalDeviceProperties properties;
-    vkGetPhysicalDeviceProperties(pDevice, &properties);
-    double ns_per_tick = properties.limits.timestampPeriod;
-    PRINT("ns_per_tick: %f", ns_per_tick);
-
-    const uint32_t queryCount = 3;
     const VkQueryPoolCreateInfo pCreateInfo = {
         VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
         nullptr,
         0,
         VK_QUERY_TYPE_TIMESTAMP,
-        queryCount,
+        gNbGpuTimestamps,
         0,
     };
     VkQueryPool queryPool;
     res = vkCreateQueryPool(device, &pCreateInfo, nullptr, &queryPool);
-    CHECK(res == VK_SUCCESS, "Could not create query pool");
+    CHECK_VK(res, "Could not create query pool");
 
-    vkCmdResetQueryPool(cmdBuffer, queryPool, 0, queryCount);
+    vkCmdResetQueryPool(cmdBuffer, queryPool, 0, gNbGpuTimestamps);
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 0);
 
     for (unsigned i = 0; i < gColdRun; i++) {
         vkCmdDispatch(cmdBuffer, config.groupCountX, config.groupCountY, config.groupCountZ);
     }
 
-    const uint64_t zero[2] = { 0ULL, 0ULL };
-    for (auto &counter : counters) {
-        vkCmdUpdateBuffer(cmdBuffer, counter.buffer, 0, sizeof(zero), zero);
-    }
+    auto countersSize = counters_size(counters);
+    auto zero = malloc(countersSize);
+    memset(zero, 0, countersSize);
+    vkCmdUpdateBuffer(cmdBuffer, gCounterBuffer, 0, countersSize, zero);
 
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 1);
     for (unsigned i = 0; i < gHotRun; i++) {
@@ -636,68 +634,123 @@ uint32_t execute(VkPhysicalDevice pDevice, VkDevice device, VkCommandBuffer cmdB
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 2);
 
     res = vkEndCommandBuffer(cmdBuffer);
-    CHECK(res == VK_SUCCESS, "Could not end command buffer");
+    CHECK_VK(res, "Could not end command buffer");
 
     const VkSubmitInfo pSubmit
         = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 0, nullptr, nullptr, 1, &cmdBuffer, 0, nullptr };
 
-    auto timeBeforeSubmit = std::chrono::steady_clock::now();
+    host_timestamps[0] = std::chrono::steady_clock::now();
     res = vkQueueSubmit(queue, 1, &pSubmit, VK_NULL_HANDLE);
-    auto timeAfterSubmit = std::chrono::steady_clock::now();
-    CHECK(res == VK_SUCCESS, "Could not submit cmdBuffer in queue");
+    host_timestamps[1] = std::chrono::steady_clock::now();
+    CHECK_VK(res, "Could not submit cmdBuffer in queue");
 
     res = vkQueueWaitIdle(queue);
-    auto timeAfterWaitIdle = std::chrono::steady_clock::now();
-    CHECK(res == VK_SUCCESS, "Could not wait for queue idle");
+    host_timestamps[2] = std::chrono::steady_clock::now();
+    CHECK_VK(res, "Could not wait for queue idle");
 
-    uint64_t timestamps[queryCount];
-    res = vkGetQueryPoolResults(device, queryPool, 0, queryCount, sizeof(timestamps), timestamps, sizeof(timestamps[0]),
-        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    CHECK(res == VK_SUCCESS, "Could not get query pool results");
-
-    uint64_t gpu_cold_tick = timestamps[1] - timestamps[0];
-    uint64_t gpu_hot_tick = timestamps[2] - timestamps[1];
-    uint64_t gpu_total_tick = timestamps[2] - timestamps[0];
-
-    uint64_t gpu_cold_ns = gpu_cold_tick * ns_per_tick;
-    uint64_t gpu_hot_ns = gpu_hot_tick * ns_per_tick;
-    uint64_t gpu_total_ns = gpu_total_tick * ns_per_tick;
-    uint64_t gpu_avg_hot_ns = (gpu_hot_tick * ns_per_tick) / gHotRun;
-
-    print_time(std::chrono::duration_cast<std::chrono::nanoseconds>(timeAfterSubmit - timeBeforeSubmit).count(),
-        "[HOST]", "Submit");
-    print_time(std::chrono::duration_cast<std::chrono::nanoseconds>(timeAfterWaitIdle - timeAfterSubmit).count(),
-        "[HOST]", "WaitIdle");
-    print_time(std::chrono::duration_cast<std::chrono::nanoseconds>(timeAfterWaitIdle - timeBeforeSubmit).count(),
-        "[HOST]", "Total");
-
-    print_time(gpu_total_ns, "[GPU ]", "Total");
-    if (gColdRun != 0) {
-        print_time(gpu_cold_ns, "[GPU ]", "Cold");
-        print_time(gpu_hot_ns, "[GPU ]", "Hot");
-    }
-    print_time(gpu_avg_hot_ns, "[GPU ]", "Average");
-
-    for (auto &counter : counters) {
-        uint64_t *values;
-        res = vkMapMemory(device, counter.memory, 0, sizeof(uint64_t) * 2, 0, (void **)&values);
-        CHECK(res == VK_SUCCESS, "Could not map memory for counter '%s'", counter.name);
-        uint64_t count = values[0];
-        uint64_t total = values[1];
-        uint64_t avg_ns = total * ns_per_tick / count;
-        print_time(avg_ns, "[GPU ]", "Counter", false);
-        printf(" - %.1f%% - '%s'", (double)avg_ns * 100.0 / (double)gpu_avg_hot_ns, counter.name);
-        if (gVerbose) {
-            printf(" - count: %lu - total: %lu", count, total);
-        }
-        printf("\n");
-        vkUnmapMemory(device, counter.memory);
-    }
+    res = vkGetQueryPoolResults(device, queryPool, 0, gNbGpuTimestamps, sizeof(gpu_timestamps[0]) * gNbGpuTimestamps,
+        gpu_timestamps, sizeof(gpu_timestamps[0]), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    CHECK_VK(res, "Could not get query pool results");
 
     return 0;
 }
 
-void help()
+static uint32_t print_results(VkPhysicalDevice pDevice, VkDevice device, spvtools::vksp_configuration &config,
+    std::vector<spvtools::vksp_counter> &counters, uint64_t *gpu_timestamps,
+    std::chrono::steady_clock::time_point *host_timestamps)
+{
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(pDevice, &properties);
+    double ns_per_tick = properties.limits.timestampPeriod;
+    PRINT("ns_per_tick: %f", ns_per_tick);
+
+    uint64_t gpu_cold_tick = gpu_timestamps[1] - gpu_timestamps[0];
+    uint64_t gpu_hot_tick = gpu_timestamps[2] - gpu_timestamps[1];
+    uint64_t gpu_total_tick = gpu_timestamps[2] - gpu_timestamps[0];
+
+    uint64_t gpu_cold_ns = gpu_cold_tick * ns_per_tick;
+    uint64_t gpu_hot_ns = gpu_hot_tick * ns_per_tick;
+    uint64_t gpu_total_ns = gpu_total_tick * ns_per_tick;
+    uint64_t gpu_avg_hot_ns = gpu_hot_ns / gHotRun;
+
+    auto get_max_size = [](std::vector<const char *> messages) {
+        std::vector<uint32_t> host_messages_length;
+        std::for_each(messages.begin(), messages.end(),
+            [&host_messages_length](const char *msg) { host_messages_length.push_back(strlen(msg)); });
+        return *std::max_element(host_messages_length.begin(), host_messages_length.end());
+    };
+
+    printf("%s-%s-%u.%u.%u\n", config.shaderName, config.entryPoint, config.groupCountX, config.groupCountY,
+        config.groupCountZ);
+    const char *HOST_prefix = "HOST";
+    const char *GPU_prefix = "GPU";
+    const char *SHADER_prefix = "SHADER";
+    const uint32_t prefix_max_size = get_max_size({ HOST_prefix, GPU_prefix, SHADER_prefix });
+
+    std::vector<const char *> messages;
+    const char *Submit_msg = "Submit";
+    const char *WaitIdle_msg = "WaitIdle";
+    const char *Total_msg = "Total";
+    const char *Cold_msg = "Cold";
+    const char *Hot_msg = "Hot";
+    const char *Hot_avg_msg = "Hot avg";
+    messages.assign({ Submit_msg, WaitIdle_msg, Total_msg, Cold_msg, Hot_msg, Hot_avg_msg });
+    for (auto &counter : counters) {
+        messages.push_back(counter.name);
+    }
+    const uint32_t messages_max_size = get_max_size(messages);
+
+    auto print_separator = [messages_max_size, prefix_max_size]() {
+        for (unsigned i = 0; i < messages_max_size + prefix_max_size; i++) {
+            printf("-");
+        }
+        printf("---------------\n");
+    };
+
+    print_separator();
+
+    print_time(std::chrono::duration_cast<std::chrono::nanoseconds>(host_timestamps[1] - host_timestamps[0]).count(),
+        HOST_prefix, prefix_max_size, Submit_msg, messages_max_size);
+    print_time(std::chrono::duration_cast<std::chrono::nanoseconds>(host_timestamps[2] - host_timestamps[1]).count(),
+        HOST_prefix, prefix_max_size, WaitIdle_msg, messages_max_size);
+    print_time(std::chrono::duration_cast<std::chrono::nanoseconds>(host_timestamps[2] - host_timestamps[0]).count(),
+        HOST_prefix, prefix_max_size, Total_msg, messages_max_size);
+
+    print_separator();
+
+    print_time(gpu_total_ns, GPU_prefix, prefix_max_size, Total_msg, messages_max_size);
+    print_time(gpu_cold_ns, GPU_prefix, prefix_max_size, Cold_msg, messages_max_size);
+    print_time(gpu_hot_ns, GPU_prefix, prefix_max_size, Hot_msg, messages_max_size);
+    if (gHotRun != 1) {
+        print_time(gpu_avg_hot_ns, GPU_prefix, prefix_max_size, Hot_avg_msg, messages_max_size);
+    }
+
+    if (counters.size() == 0) {
+        return 0;
+    }
+
+    print_separator();
+
+    uint64_t *values;
+    auto countersSize = counters_size(counters);
+    VkResult res = vkMapMemory(device, gCounterMemory, 0, countersSize, 0, (void **)&values);
+    CHECK_VK(res, "Could not map memory for counter");
+
+    uint64_t nb_invocations = values[0];
+    double entryPoint_tick = values[1];
+    PRINT("Number of invocations: %lu", nb_invocations);
+
+    for (auto &counter : counters) {
+        print_prefix(prefix_max_size, SHADER_prefix, messages_max_size, counter.name);
+        printf("%*.1f%%\n", 5, values[counter.index] * 100.0 / entryPoint_tick);
+    }
+
+    vkUnmapMemory(device, gCounterMemory);
+
+    return 0;
+}
+
+static void help()
 {
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
            "\n"
@@ -708,7 +761,7 @@ void help()
            "\t-v\tVerbose mode\n");
 }
 
-bool parse_args(int argc, char **argv)
+static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
@@ -754,8 +807,10 @@ int main(int argc, char **argv)
     std::vector<spvtools::vksp_descriptor_set> dsVector;
     std::vector<spvtools::vksp_push_constant> pcVector;
     std::vector<spvtools::vksp_specialization_map_entry> meVector;
+    std::vector<spvtools::vksp_counter> counters;
     spvtools::vksp_configuration config;
-    CHECK(extract_from_input(shader, dsVector, pcVector, meVector, config), "Could not extract data from input");
+    CHECK(extract_from_input(shader, dsVector, pcVector, meVector, counters, config),
+        "Could not extract data from input");
     PRINT("Shader name: '%s'", config.shaderName);
     PRINT("Entry point: '%s'", config.entryPoint);
     PRINT("groupCount: %u-%u-%u", config.groupCountX, config.groupCountY, config.groupCountZ);
@@ -779,18 +834,17 @@ int main(int argc, char **argv)
         "Could not allocate descriptor set");
     PRINT("Descriptor set allocated");
 
-    std::vector<vksp_counter> counters;
     for (auto &ds : dsVector) {
         switch (ds.type) {
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-            PRINT(
-                "descriptor_set: ds %u binding %u type %u BUFFER size %u flags %u queueFamilyIndexCount %u "
-                "sharingMode %u usage %u range %u offset %u memorySize %u memoryType %u bindOffset %u counterName '%s'",
+        case VKSP_DESCRIPTOR_TYPE_STORAGE_BUFFER_COUNTER:
+            PRINT("descriptor_set: ds %u binding %u type %u BUFFER size %u flags %u queueFamilyIndexCount %u "
+                  "sharingMode %u usage %u range %u offset %u memorySize %u memoryType %u bindOffset %u",
                 ds.ds, ds.binding, ds.type, ds.buffer.size, ds.buffer.flags, ds.buffer.queueFamilyIndexCount,
                 ds.buffer.sharingMode, ds.buffer.usage, ds.buffer.range, ds.buffer.offset, ds.buffer.memorySize,
-                ds.buffer.memoryType, ds.buffer.bindOffset, ds.buffer.vksp_counter);
-            CHECK(handle_descriptor_set_buffer(ds, device, cmdBuffer, memProperties, descSet, counters) == 0,
+                ds.buffer.memoryType, ds.buffer.bindOffset);
+            CHECK(handle_descriptor_set_buffer(ds, device, cmdBuffer, memProperties, descSet) == 0,
                 "Could not handle descriptor set buffer");
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
@@ -867,8 +921,14 @@ int main(int argc, char **argv)
         "Could not allocate pipeline");
     PRINT("Compute pipeline allocated");
 
-    CHECK(execute(pDevice, device, cmdBuffer, queue, config, counters) == 0, "Could not execute");
+    uint64_t gpu_timestamps[gNbGpuTimestamps];
+    std::chrono::steady_clock::time_point host_timestamps[3];
+    CHECK(
+        execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps) == 0, "Could not execute");
     PRINT("Execution completed");
+
+    CHECK(print_results(pDevice, device, config, counters, gpu_timestamps, host_timestamps) == 0,
+        "Could not print all results");
 
     return 0;
 }
