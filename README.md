@@ -10,6 +10,19 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 
 `vulkan-kernel-profiler` is licensed under the terms of the [Apache 2.0 license](LICENSE).
 
+# Table of contents
+
+- [Depencencies](#Dependencies)
+- [Building](#Building)
+  - [Build options](#Build-options)
+- [Running an application with Vulkan Shader Profiler](#Running-an-application-with-Vulkan-Shader-Profiler)
+  - [On ChromeOS](#On-ChromeOS)
+  - [Using the trace](#Using-the-trace)
+  - [How does the Vulkan Shader Profiler layer work](#How-does-the-Vulkan-Shader-Profiler-layer-work)
+- [Extracting a dispatch from a trace](#Extracting-a-dispatch-from-a-trace)
+- [Run a Vulkan SPIR-V program with the runner](#Run-a-Vulkan-SPIR-V-program-with-the-runner)
+  - [Using counters inside a Vulkan SPIR-V program](#Using-counters-inside-a-Vulkan-SPIR-V-program)
+
 # Dependencies
 
 `vulkan-kernel-profiler` depends on the following:
@@ -32,7 +45,7 @@ cmake -B <build_dir> -S <path-to-vulkan-kernel-profiler> -DPERFETTO_SDK_PATH=<pa
 cmake --build <build_dir>
 ```
 
-# Build options
+## Build options
 
 * `PERFETTO_SDK_PATH` (REQUIRED): path to [perfetto](https://github.com/google/perfetto) sdk (`vulkan-kernel-profiler` is looking for `PERFETTO_SDK_PATH/perfetto.cc` and `PERFETTO_SDK_PATH/perfetto.h`).
 * `PERFETTO_TRACE_PROCESSOR_LIB` (REQUIRED): path to `libtrace_processor.a` produces by a perfetto build.
@@ -64,11 +77,11 @@ Make sure to have emerged and deployed the `vulkan-shader-profiler`.
 
 Then run the application using `vulkan-shader-profiler.sh`. This script will take care of setting all the environment variables needed to run with the `vulkan-shader-profiler`.
 
-# Using the trace
+## Using the trace
 
 Once traces have been generated, on can view them using the [perfetto trace viewer](https://ui.perfetto.dev).
 
-# How does the Vulkan Shader Profiler layer work
+## How does the Vulkan Shader Profiler layer work
 
 `vulkan-shader-profiler` intercept the following calls to generate perfetto traces:
 
