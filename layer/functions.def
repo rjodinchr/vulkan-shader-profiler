@@ -29,6 +29,8 @@ FUNC_DEV(CmdDispatch)
 FUNC_DEV(CmdBindPipeline)
 FUNC_DEV(CreateComputePipelines)
 FUNC_DEV(CreateShaderModule)
+
+// Functions to intercept to generate the needed traces for the extractor
 FUNC_DEV(UpdateDescriptorSets)
 FUNC_DEV(CmdBindDescriptorSets)
 FUNC_DEV(CreateBuffer)
