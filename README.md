@@ -16,8 +16,8 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 
 * [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader)
 * [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers)
-* [SPIRV-Headers](https://github.com/KhronosGroup/SPIRV-Headers)
-* [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools)
+* [SPIRV-Headers](https://github.com/KhronosGroup/SPIRV-Headers) (with https://github.com/KhronosGroup/SPIRV-Headers/pull/398)
+* [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) (with https://github.com/KhronosGroup/SPIRV-Tools/pull/5512)
 * [perfetto](https://github.com/google/perfetto)
 
 `vulkan-kernel-profiler` also (obviously) depends on a Vulkan implementation.
