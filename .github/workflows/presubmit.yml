@@ -18,7 +18,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check format
-        run: git-clang-format --binary clang-format-15 --diff origin/main --extensions cpp,hpp
+        run: |
+          git-clang-format --binary clang-format-15 --diff origin/main --extensions cpp,hpp > output.txt
+          cat output.txt
+          grep "no modified files to format" output.txt
   build:
     name: Build
     needs: format
