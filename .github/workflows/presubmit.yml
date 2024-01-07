@@ -52,6 +52,7 @@ jobs:
           cmake -B build -S . -G Ninja \
             -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
             -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
+            -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/perfetto/out/linux_clang_release/gen/build_config" \
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools"
           cmake --build build
