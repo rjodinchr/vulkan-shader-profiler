@@ -41,7 +41,7 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 
 To compile it, please run:
 ```
-cmake -B <build_dir> -S <path-to-vulkan-kernel-profiler> -DPERFETTO_SDK_PATH=<path-to-perfetto-sdk> -DPERFETTO_TRACE_PROCESSOR_LIB=<path-to-libtrace_processor.a> -DPERFETTO_INTERNAL_INCLUDE_PATH=<path-to-perfetto-include> -DSPIRV_TOOLS_LIBRARY=<path-to-libSPIRV-Tools.{so|a}> -DSPIRV_TOOLS_OPT_LIBRARY=<path-to-libSPIRV-Tools-opt.{so|a}>
+cmake -B <build_dir> -S <path-to-vulkan-kernel-profiler> -DPERFETTO_SDK_PATH=<path-to-perfetto-sdk> -DPERFETTO_TRACE_PROCESSOR_LIB=<path-to-libtrace_processor.a> -DPERFETTO_INTERNAL_INCLUDE_PATH=<path-to-perfetto-include>
 cmake --build <build_dir>
 ```
 
@@ -50,14 +50,11 @@ cmake --build <build_dir>
 * `PERFETTO_SDK_PATH` (REQUIRED): path to [perfetto](https://github.com/google/perfetto) sdk (`vulkan-kernel-profiler` is looking for `PERFETTO_SDK_PATH/perfetto.cc` and `PERFETTO_SDK_PATH/perfetto.h`).
 * `PERFETTO_TRACE_PROCESSOR_LIB` (REQUIRED): path to `libtrace_processor.a` produces by a perfetto build.
 * `PERFETTO_INTERNAL_INCLUDE_PATH` (REQUIRED): path to perfetto internal include directory (`<perfetto>/include`), or where it is installed.
-* `SPIRV_TOOLS_LIBRARY` (REQUIRED): path to `libSPIRV-Tools.so` or `libSPIRV-Tools.a`.
-* `SPIRV_TOOLS_OPT_LIBRARY` (REQUIRED): path to `libSPIRV-Tools-opt.so` or `libSPIRV-Tools-opt.a`.
 * OPTIONAL:
   * `PERFETTO_GEN_INCLUDE_PATH`: path to a a perfetto build (if not installed) `<perfetto>/out/release/gen/build_config`.
   * `PERFETTO_CXX_CONFIG_INCLUDE_PATH`: path to perfetto buildtools config `<perfetto>/buildtools/libcxx_config`.
   * `PERFETTO_CXX_SYSTEM_INCLUDE_PATH`: path to perfetto buildtools include `<perfetto>/buildtools/libcxx/include`.
   * `EXTRACTOR_NOSTDINCXX`: build `vulkan-shader-profiler-extractor` with `-nostdinc++` to be able to link with some `libtrace_processor.a`.
-  * `SPIRV_TOOLS_INCLUDE_PATH`: path to SPIRV-Tools include `<SPIRV-Tools>/include`.
   * `BACKEND`: [perfetto](https://github.com/google/perfetto) backend to use
     * `InProcess` (default): the application will generate the traces ([perfetto documentation](https://perfetto.dev/docs/instrumentation/tracing-sdk#in-process-mode)). Build options and environment variables can be used to control the maximum size of traces and the destination file where the traces will be recorded.
     * `System`: perfetto `traced` daemon will be responsible for generating the traces ([perfetto documentation](https://perfetto.dev/docs/instrumentation/tracing-sdk#system-mode)).
