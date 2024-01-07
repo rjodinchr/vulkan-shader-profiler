@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build libvulkan-dev
+          sudo apt-get install ninja-build libvulkan-dev clang-15
       - name: Build SPIRV-Tools
         run: |
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
@@ -47,9 +47,9 @@ jobs:
           $(pwd)/third_party/perfetto/tools/install-build-deps
           $(pwd)/third_party/perfetto/tools/setup_all_configs.py
           $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a
-      - name: Build
+      - name: Build debug
         run: |
-          cmake -B build -S . -G Ninja \
+          cmake -B build_debug -S . -G Ninja \
             -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
             -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
             -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
@@ -57,5 +57,21 @@ jobs:
             -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
             -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
             -DEXTRACTOR_NOSTDINCXX=1 \
-            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools"
-          cmake --build build
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build_debug
+      - name: Build release
+        run: |
+          cmake -B build_release -S . -G Ninja \
+            -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
+            -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
+            -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
+            -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
+            -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
+            -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
+            -DEXTRACTOR_NOSTDINCXX=1 \
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_release
