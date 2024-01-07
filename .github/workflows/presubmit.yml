@@ -43,7 +43,7 @@ jobs:
           git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
           $(pwd)/third_party/perfetto/tools/install-build-deps
           $(pwd)/third_party/perfetto/tools/setup_all_configs.py
-          $(pwd)/third_party/perfetto/tools/ninja -C out/linux_clang_release libtrace_processor.a
+          $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a
       - name: Build
         run: |
           cmake -B build -S . -G Ninja \
