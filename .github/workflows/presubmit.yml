@@ -10,7 +10,7 @@ jobs:
     name: Check code formatting
     runs-on: ubuntu-22.04
     steps:
-      - name: Install packages
+      - name: Install clang-format
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format clang-format-15
@@ -51,7 +51,7 @@ jobs:
         run: |
           cmake -B build -S . -G Ninja \
             -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
-            -DPERFETTO_INTERNAL_PATH="$(pwd)/third_party/perfetto/include" \
+            -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools/opt;$(pwd)/install/lib/cmake/SPIRV-Tools"
           cmake --build build
