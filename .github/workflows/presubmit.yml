@@ -37,13 +37,13 @@ jobs:
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
           mkdir install
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja -DCMAKE_INSTALL_PREFIX=install
-          cmake --build third_party/spirv-tools/build --target install -j2
+          cmake --build third_party/spirv-tools/build --target install
       - name: Build Perfetto
         run: |
           git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
-          third_party/perfetto/tools/install-build-deps
-          third_party/perfetto/tools/setup-all-configs.py
-          third_party/perfetto/tools/ninja -C out/linux_clang_release libtrace_processor.a
+          $(pwd)/third_party/perfetto/tools/install-build-deps
+          $(pwd)/third_party/perfetto/tools/setup-all-configs.py
+          $(pwd)/third_party/perfetto/tools/ninja -C out/linux_clang_release libtrace_processor.a
       - name: Build
         run: |
           cmake -B build -S . -G Ninja \
