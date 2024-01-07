@@ -54,6 +54,8 @@ jobs:
             -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
             -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
+            -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
+            -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
             -DEXTRACTOR_NOSTDINCXX=1 \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools"
           cmake --build build
