@@ -39,7 +39,9 @@ jobs:
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
           mkdir install
-          cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja -DCMAKE_INSTALL_PREFIX=install
+          cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
+            -DCMAKE_INSTALL_PREFIX=install \
+            -DCMAKE_CXX_COMPILER="$(which clang++)"
           cmake --build third_party/spirv-tools/build --target install
       - name: Build Perfetto
         run: |
