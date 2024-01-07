@@ -20,8 +20,8 @@
 #include <condition_variable>
 #include <perfetto.h>
 #include <stdint.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <fstream>
 #include <map>
