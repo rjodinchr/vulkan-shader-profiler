@@ -30,7 +30,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build vulkan-headers
+          sudo apt-get install ninja-build libvulkan-dev
       - name: Build SPIRV-Tools
         run: |
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
