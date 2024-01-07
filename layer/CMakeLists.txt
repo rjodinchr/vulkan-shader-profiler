@@ -13,8 +13,8 @@
 # limitations under the License.
 
 add_library (vulkan-shader-profiler MODULE layer.cpp ${PERFETTO_SDK_PATH}/perfetto.cc)
-target_include_directories(vulkan-shader-profiler PUBLIC ${Vulkan_INCLUDE_DIRS} ${PERFETTO_SDK_PATH})
-target_link_libraries (vulkan-shader-profiler SPIRV-Tools)
+target_include_directories(vulkan-shader-profiler PUBLIC ${Vulkan_INCLUDE_DIRS} ${PERFETTO_SDK_PATH} ${SPIRV-Tools-opt_INCLUDE_DIRS})
+target_link_libraries (vulkan-shader-profiler ${SPIRV-Tools-opt_LIBRARIES})
 
 set(BACKEND "InProcess"
   CACHE STRING "Select perfetto backend")

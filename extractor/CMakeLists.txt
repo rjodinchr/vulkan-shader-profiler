@@ -13,10 +13,8 @@
 # limitations under the License.
 
 add_library(vksp-spirv STATIC spirv.cpp)
-if (SPIRV_TOOLS_INCLUDE_PATH)
-  target_include_directories(vksp-spirv PUBLIC ${SPIRV_TOOLS_INCLUDE_PATH})
-endif()
-target_link_libraries(vksp-spirv ${SPIRV_TOOLS_OPT_LIBRARY} ${SPIRV_TOOLS_LIBRARY})
+target_include_directories(vksp-spirv PUBLIC ${SPIRV-Tools-opt_INCLUDE_DIRS})
+target_link_libraries(vksp-spirv ${SPIRV-Tools-opt_LIBRARIES})
 
 add_executable(vulkan-shader-profiler-extractor extractor.cpp)
 target_link_libraries(vulkan-shader-profiler-extractor ${PERFETTO_TRACE_PROCESSOR_LIB} vksp-spirv sqlite3)

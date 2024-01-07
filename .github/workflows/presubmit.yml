@@ -1,0 +1,52 @@
+name: Presubmit
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  format:
+    name: Check code formatting
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format clang-format-15
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check format
+        run: git-clang-format --binary clang-format-15 --diff origin/main --extensions cpp,hpp
+  build:
+    name: Build
+    needs: format
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build
+      - name: Build SPIRV-Tools
+        run: |
+          git clone --depth 0 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
+          git clone --depth 0 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
+          cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja
+          cmake --build third_party/spirv-tools/build --target install
+      - name: Build Perfetto
+        run: |
+          git clone --depth 0 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
+          third_party/perfetto/tools/install-build-deps
+          third_party/perfetto/tools/setup-all-configs.py
+          third_party/perfetto/tools/ninja -C out/linux_clang_release libtrace_processor.a
+      - name: Build
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DPERFETTO_SDK_PATH="third_party/perfetto/sdk" \
+            -DPERFETTO_INTERNAL_PATH="third_party/perfetto/include" \
+            -DPERFETTO_TRACE_PROCESSOR_LIB="third_party/perfetto/out/linux_clang_release/libtrace_processor.a"
+          cmake --build build

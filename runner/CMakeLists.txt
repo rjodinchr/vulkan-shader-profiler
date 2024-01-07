@@ -13,9 +13,6 @@
 # limitations under the License.
 
 add_executable(vulkan-shader-profiler-runner runner.cpp)
-target_include_directories(vulkan-shader-profiler-runner PUBLIC ${Vulkan_INCLUDE_DIRS})
-if (SPIRV_TOOLS_INCLUDE_PATH)
-  target_include_directories(vulkan-shader-profiler-runner PUBLIC ${SPIRV_TOOLS_INCLUDE_PATH})
-endif()
-target_link_libraries(vulkan-shader-profiler-runner ${Vulkan_LIBRARIES} ${SPIRV_TOOLS_OPT_LIBRARY} ${SPIRV_TOOLS_LIBRARY})
+target_include_directories(vulkan-shader-profiler-runner PUBLIC ${Vulkan_INCLUDE_DIRS} ${SPIRV-Tools-opt_INCLUDE_DIRS})
+target_link_libraries(vulkan-shader-profiler-runner ${Vulkan_LIBRARIES} ${SPIRV-Tools-opt_LIBRARIES})
 

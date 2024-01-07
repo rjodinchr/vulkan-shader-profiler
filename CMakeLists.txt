@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required (VERSION 3.1)
+cmake_minimum_required (VERSION 3.24)
 project (vulkan-shader-profiler)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -26,12 +26,10 @@ endif()
 if (NOT PERFETTO_INTERNAL_INCLUDE_PATH)
   message(FATAL_ERROR "PERFETTO_INTERNAL_INCLUDE_PATH not defined")
 endif()
-if (NOT SPIRV_TOOLS_LIBRARY)
-  message(FATAL_ERROR "SPIRV_TOOLS_LIBRARY not defined")
-endif()
-if (NOT SPIRV_TOOLS_OPT_LIBRARY)
-  message(FATAL_ERROR "SPIRV_TOOLS_OPT_LIBRARY not defined")
-endif()
+
+find_package(SPIRV-Tools-opt)
+message(STATUS "SPIRV-Tools-opt_LIBRARIES = '${SPIRV-Tools-opt_LIBRARIES}'")
+message(STATUS "SPIRV-Tools-opt_INCLUDE_DIRS = '${SPIRV-Tools-opt_INCLUDE_DIRS}'")
 
 find_package(Vulkan)
 message(STATUS "Vulkan_INCLUDE_DIRS = '${Vulkan_INCLUDE_DIRS}'")
