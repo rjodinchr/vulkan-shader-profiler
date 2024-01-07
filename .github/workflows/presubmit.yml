@@ -33,13 +33,13 @@ jobs:
           sudo apt-get install ninja-build
       - name: Build SPIRV-Tools
         run: |
-          git clone --depth 0 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
-          git clone --depth 0 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
+          git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
+          git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja
           cmake --build third_party/spirv-tools/build --target install
       - name: Build Perfetto
         run: |
-          git clone --depth 0 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
+          git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
           third_party/perfetto/tools/install-build-deps
           third_party/perfetto/tools/setup-all-configs.py
           third_party/perfetto/tools/ninja -C out/linux_clang_release libtrace_processor.a
