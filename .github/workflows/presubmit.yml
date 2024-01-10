@@ -84,8 +84,8 @@ jobs:
           $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
           $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
           sleep 1
-          mkdir -p /etc/vulkan/explicit_layer.d
-          cp $(pwd)/manifest/vulkan-shader-profiler.json /etc/vulkan/explicit_layer.d/
+          mkdir -p ~/.local/share/vulkan/implicit_layer.d/
+          cp $(pwd)/manifest/vulkan-shader-profiler.json ~/.local/share/vulkan/implicit_layer.d/
           VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$LD_LIBRARY_PATH \
           VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
