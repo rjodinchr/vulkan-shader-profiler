@@ -21,7 +21,7 @@ jobs:
         run: |
           git-clang-format --binary clang-format-15 --diff origin/main --extensions cpp,hpp > output.txt
           cat output.txt
-          grep "(no modified files to format|clang-format did not modify any files)" output.txt
+          grep -E "(no modified files to format|clang-format did not modify any files)" output.txt
   build:
     name: Builds & Tests
     needs: format
