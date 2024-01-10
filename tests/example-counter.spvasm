@@ -78,7 +78,7 @@
          %40 = OpLoad %uint %39
          %counter = OpExtInst %void %49 StartCounter "my_section"
          %41 = OpIAdd %uint %40 %38
-         %unused = OpExtinst %void %49 StopCounter %counter
+         %unused = OpExtInst %void %49 StopCounter %counter
          %42 = OpAccessChain %_ptr_StorageBuffer_uint %5 %uint_0 %41
                OpStore %42 %41
                OpReturn
