@@ -84,11 +84,12 @@ jobs:
           $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
           $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
           sleep 1
+          VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_release/layer:$LD_LIBRARY_PATH \
           VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
           VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           pkill -x perfetto
           while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
-          $(pwd)/build_release/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0
+          $(pwd)/build_release/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
           diff $(pwd)/trace.spvasm $(pwd)/tests/example-exepectation.spvasm
