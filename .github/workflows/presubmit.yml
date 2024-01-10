@@ -86,9 +86,10 @@ jobs:
           sleep 1
           mkdir -p ~/.local/share/vulkan/implicit_layer.d/
           cp $(pwd)/manifest/vulkan-shader-profiler.json ~/.local/share/vulkan/implicit_layer.d/
+          ln -s $(pwd)/build_release/layer/libvulkan-shader-profiler.so libvulkan-shader-profiler.so
           VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$LD_LIBRARY_PATH \
-          VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
+          VK_INSTANCE_LAYERS="VK_LAYER_SHADER_PROFILER" \
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           pkill -x perfetto
           while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
