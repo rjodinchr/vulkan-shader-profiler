@@ -60,6 +60,7 @@ static std::string gInput = "";
 static uint32_t gColdRun = 0, gHotRun = 1;
 static VkBuffer gCounterBuffer;
 static VkDeviceMemory gCounterMemory;
+static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
@@ -191,7 +192,7 @@ static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtoo
     fclose(input);
 
     const uint32_t spirv_magic = 0x07230203;
-    spv_context context = spvContextCreate(SPV_ENV_UNIVERSAL_1_0);
+    spv_context context = spvContextCreate(gSpvTargetEnv);
     uint32_t *binary = (uint32_t *)input_buffer.data();
     size_t size = input_size / sizeof(uint32_t);
     spv_binary tmp_binary;
@@ -765,8 +766,18 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "hvi:n:m:")) != -1) {
+    while ((c = getopt(argc, argv, "hvi:n:m:e:")) != -1) {
         switch (c) {
+        case 'e': {
+            spv_target_env env;
+            if (spvParseTargetEnv(optarg, &env)) {
+                gSpvTargetEnv = env;
+            } else {
+                ERROR("Could not parse spv target env, using default: '%s'", spvTargetEnvDescription(gSpvTargetEnv));
+            }
+
+        }
+            break;
         case 'n':
             gHotRun = atoi(optarg);
             break;
@@ -801,7 +812,8 @@ int main(int argc, char **argv)
     if (!parse_args(argc, argv)) {
         return -1;
     }
-    PRINT("Arguments parsed: input '%s' verbose '%u'", gInput.c_str(), gVerbose);
+    PRINT("Arguments parsed: input '%s' verbose '%u' spv_target_env '%s' hot_runs '%u' cold_runs '%u'", gInput.c_str(),
+        gVerbose, spvTargetEnvDescription(gSpvTargetEnv), gHotRun, gColdRun);
 
     std::vector<uint32_t> shader;
     std::vector<spvtools::vksp_descriptor_set> dsVector;

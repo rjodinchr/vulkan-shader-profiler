@@ -146,6 +146,7 @@ Required options:
 
 Optional options:
 
+* `-e`: allow to choose the `spv_target_env` to use when using a non-binary input to convert it to binary (default: `vulkan1.3`)
 * `-n`: allow to run the program multiple times
 * `-m`: allow to run the program multiple times before starting to benchmark it
 * `-v`: enable the verbose mode which is mainly use for debug purpose.
