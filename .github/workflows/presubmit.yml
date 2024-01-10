@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build libvulkan-dev clang-15
+          sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers
       - name: Build SPIRV-Tools
         run: |
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
@@ -77,3 +77,18 @@ jobs:
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build_release
+      - name: Tests
+        run: |
+          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
+          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
+          $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
+          $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
+          sleep 1
+          LD_LIBRARY_PATH=$(pwd)/build_release/layer:$LD_LIBRARY_PATH \
+          VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
+          VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
+          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
+          pkill -x perfetto
+          while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
+          $(pwd)/build_release/extractor/vulkan-shader-profiler-extract -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0
+          diff $(pwd)/trace.spvasm $(pwd)/tests/example-exepectation.spvasm
