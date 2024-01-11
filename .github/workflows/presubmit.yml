@@ -100,11 +100,10 @@ jobs:
         run: |
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
-          LD_DEBUG=libs \
           VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
-          VK_LOADER_LAYERS_ENABLE=$(pwd)/manifest/ \
-          VK_ADD_LAYER_PATH="VK_LAYER_SHADER_PROFILER" \
+          VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
+          VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
           VKSP_TRACE_DEST=$(pwd)/trace \
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           $(pwd)/build_release/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
