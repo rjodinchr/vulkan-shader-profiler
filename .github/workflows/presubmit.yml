@@ -84,6 +84,7 @@ jobs:
           cmake -B third_party/vulkan-headers/build -S third_party/vulkan-headers -G Ninja \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_C_COMPILER="$(which clang)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/vulkan-headers/build --target install
       - name: Build Vulkan-Loader
@@ -92,6 +93,7 @@ jobs:
           cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
             -DVulkanHeaders_DIR=$(pwd)/install/share/cmake/VulkanHeaders \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_C_COMPILER="$(which clang)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/vulkan-loader/build
       - name: Tests
