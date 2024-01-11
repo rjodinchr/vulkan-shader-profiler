@@ -41,7 +41,8 @@ jobs:
           mkdir install
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
             -DCMAKE_INSTALL_PREFIX=install \
-            -DCMAKE_CXX_COMPILER="$(which clang++)"
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/spirv-tools/build --target install
       - name: Build Perfetto
         run: |
@@ -77,6 +78,13 @@ jobs:
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build_release
+      - name: Build Vulkan-Loader
+        run : |
+          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
+          cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/vulkan-loader/build
       - name: Tests
         run: |
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
@@ -84,12 +92,11 @@ jobs:
           $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
           $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
           sleep 1
-          mkdir -p ~/.local/share/vulkan/implicit_layer.d/
-          cp $(pwd)/manifest/vulkan-shader-profiler.json ~/.local/share/vulkan/implicit_layer.d/
-          ln -s $(pwd)/build_release/layer/libvulkan-shader-profiler.so libvulkan-shader-profiler.so
+          LD_DEBUG=libs \
           VK_LOADER_DEBUG=all \
-          LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$LD_LIBRARY_PATH \
-          VK_INSTANCE_LAYERS="VK_LAYER_SHADER_PROFILER" \
+          LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
+          VK_LOADER_LAYERS_ENABLE=$(pwd)/manifest/ \
+          VK_ADD_LAYER_PATH="VK_LAYER_SHADER_PROFILER" \
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           pkill -x perfetto
           while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
