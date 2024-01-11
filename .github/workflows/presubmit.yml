@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers
+          sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers libxrandr-dev
       - name: Build SPIRV-Tools
         run: |
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
