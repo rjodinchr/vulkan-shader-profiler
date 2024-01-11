@@ -64,6 +64,16 @@ static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
+static VkInstance gInstance;
+static VkCommandPool gCmdPool;
+static std::vector<VkBuffer> gBuffers;
+static std::vector<VkDeviceMemory> gMemories;
+static std::vector<VkImage> gImages;
+static std::vector<VkImageView> gImageViews;
+static std::vector<VkSampler> gSamplers;
+static VkDescriptorPool gDescPool;
+static VkShaderModule gShaderModule;
+
 static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device, VkQueue &queue,
     VkCommandBuffer &cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, const char *enabledExtensionNames)
 {
@@ -82,16 +92,15 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
         nullptr,
     };
 
-    VkInstance instance;
-    res = vkCreateInstance(&info, nullptr, &instance);
+    res = vkCreateInstance(&info, nullptr, &gInstance);
     CHECK_VK(res, "Could not create vulkan instance");
 
     uint32_t nbDevices;
-    res = vkEnumeratePhysicalDevices(instance, &nbDevices, nullptr);
+    res = vkEnumeratePhysicalDevices(gInstance, &nbDevices, nullptr);
     CHECK_VK(res, "Could not enumerate physical devices");
 
     std::vector<VkPhysicalDevice> physicalDevices(nbDevices);
-    res = vkEnumeratePhysicalDevices(instance, &nbDevices, physicalDevices.data());
+    res = vkEnumeratePhysicalDevices(gInstance, &nbDevices, physicalDevices.data());
     CHECK_VK(res, "Could not enumerate physical devices (second call)");
     pDevice = physicalDevices.front();
 
@@ -157,14 +166,13 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
 
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &queue);
 
-    VkCommandPool cmdPool;
     const VkCommandPoolCreateInfo pCreateInfo
         = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, 0, queueFamilyIndex };
-    res = vkCreateCommandPool(device, &pCreateInfo, nullptr, &cmdPool);
+    res = vkCreateCommandPool(device, &pCreateInfo, nullptr, &gCmdPool);
     CHECK_VK(res, "Could not create command pool");
 
     const VkCommandBufferAllocateInfo pAllocateInfo
-        = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, cmdPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1 };
+        = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, gCmdPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1 };
     res = vkAllocateCommandBuffers(device, &pAllocateInfo, &cmdBuffer);
     CHECK_VK(res, "Could not allocate command buffer");
 
@@ -253,6 +261,7 @@ static uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, 
         ds.buffer.size, ds.buffer.usage, (VkSharingMode)ds.buffer.sharingMode, 0, nullptr };
     res = vkCreateBuffer(device, &pCreateInfo, nullptr, &buffer);
     CHECK_VK(res, "Could not create buffer");
+    gBuffers.push_back(buffer);
 
     if (bCounter) {
         VkMemoryRequirements memreqs;
@@ -283,6 +292,7 @@ static uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, 
     VkDeviceMemory memory;
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for buffer");
+    gMemories.push_back(memory);
 
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     CHECK_VK(res, "Could not bind buffer and memory");
@@ -324,6 +334,7 @@ static uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, V
         (VkImageLayout)ds.image.initialLayout };
     res = vkCreateImage(device, &pCreateInfo, nullptr, &image);
     CHECK_VK(res, "Could not create image");
+    gImages.push_back(image);
 
     const VkMemoryAllocateInfo pAllocateInfo = {
         VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -335,6 +346,7 @@ static uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, V
     VkDeviceMemory memory;
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for image");
+    gMemories.push_back(memory);
 
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
     CHECK_VK(res, "Could not bind image and memory");
@@ -349,6 +361,7 @@ static uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, V
         image, (VkImageViewType)ds.image.viewType, (VkFormat)ds.image.viewFormat, components, subresourceRange };
     res = vkCreateImageView(device, &pViewInfo, nullptr, &image_view);
     CHECK_VK(res, "Could not create image view");
+    gImageViews.push_back(image_view);
 
     const VkDescriptorImageInfo imageInfo = { VK_NULL_HANDLE, image_view, (VkImageLayout)ds.image.imageLayout };
     const VkWriteDescriptorSet write = {
@@ -381,6 +394,7 @@ static uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds,
         ds.sampler.fMaxLod, (VkBorderColor)ds.sampler.borderColor, ds.sampler.unnormalizedCoordinates };
     res = vkCreateSampler(device, &pCreateInfo, nullptr, &sampler);
     CHECK_VK(res, "Could not create sampler");
+    gSamplers.push_back(sampler);
 
     const VkDescriptorImageInfo imageInfo = { sampler, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED };
     const VkWriteDescriptorSet write = {
@@ -430,7 +444,7 @@ static uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescripto
         const VkDescriptorSetLayoutCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             nullptr, 0, (uint32_t)descSetLayoutBindings.size(), descSetLayoutBindings.data() };
         res = vkCreateDescriptorSetLayout(device, &pCreateInfo, nullptr, &descSetLayout);
-        CHECK_VK(res, "Count not create descriptor set layout");
+        CHECK_VK(res, "Could not create descriptor set layout");
 
         descSetLayoutVector.push_back(descSetLayout);
     }
@@ -443,12 +457,11 @@ static uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescripto
     const VkDescriptorPoolCreateInfo pCreateInfo
         = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, nullptr, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
               (uint32_t)descSet.size(), (uint32_t)descPoolSize.size(), descPoolSize.data() };
-    VkDescriptorPool descPool;
-    res = vkCreateDescriptorPool(device, &pCreateInfo, nullptr, &descPool);
+    res = vkCreateDescriptorPool(device, &pCreateInfo, nullptr, &gDescPool);
     CHECK_VK(res, "Could not create descriptor pool");
 
     const VkDescriptorSetAllocateInfo pAllocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr,
-        descPool, (uint32_t)descSetLayoutVector.size(), descSetLayoutVector.data() };
+        gDescPool, (uint32_t)descSetLayoutVector.size(), descSetLayoutVector.data() };
     res = vkAllocateDescriptorSets(device, &pAllocateInfo, descSet.data());
     CHECK_VK(res, "Could not allocate descriptor sets");
 
@@ -507,10 +520,9 @@ static uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayou
     spvtools::vksp_configuration &config, VkPipeline &pipeline)
 {
     VkResult res;
-    VkShaderModule shaderModule;
     const VkShaderModuleCreateInfo shaderModuleCreateInfo
         = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, shader.size() * sizeof(uint32_t), shader.data() };
-    res = vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &shaderModule);
+    res = vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &gShaderModule);
     CHECK_VK(res, "Could not create shader module");
 
     std::vector<VkSpecializationMapEntry> mapEntries;
@@ -539,7 +551,7 @@ static uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayou
     };
 
     const VkComputePipelineCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, nullptr, 0,
-        { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, shaderModule,
+        { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, gShaderModule,
             config.entryPoint, &specializationInfo },
         pipelineLayout, VK_NULL_HANDLE, 0 };
     res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pCreateInfo, nullptr, &pipeline);
@@ -653,6 +665,8 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
         gpu_timestamps, sizeof(gpu_timestamps[0]), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
     CHECK_VK(res, "Could not get query pool results");
 
+    vkDestroyQueryPool(device, queryPool, nullptr);
+
     return 0;
 }
 
@@ -751,6 +765,38 @@ static uint32_t print_results(VkPhysicalDevice pDevice, VkDevice device, spvtool
     return 0;
 }
 
+void clean_vk_objects(VkDevice device, VkCommandBuffer cmdBuffer, std::vector<VkDescriptorSet> &descSet,
+    std::vector<VkDescriptorSetLayout> &descSetLayoutVector, VkPipelineLayout pipelineLayout, VkPipeline pipeline)
+{
+    vkDestroyShaderModule(device, gShaderModule, nullptr);
+    vkDestroyPipeline(device, pipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    for (auto sampler : gSamplers) {
+        vkDestroySampler(device, sampler, nullptr);
+    }
+    for (auto imageView : gImageViews) {
+        vkDestroyImageView(device, imageView, nullptr);
+    }
+    for (auto image : gImages) {
+        vkDestroyImage(device, image, nullptr);
+    }
+    for (auto buffer : gBuffers) {
+        vkDestroyBuffer(device, buffer, nullptr);
+    }
+    for (auto memory : gMemories) {
+        vkFreeMemory(device, memory, nullptr);
+    }
+    vkFreeDescriptorSets(device, gDescPool, descSet.size(), descSet.data());
+    vkDestroyDescriptorPool(device, gDescPool, nullptr);
+    for (auto descSetLayout : descSetLayoutVector) {
+        vkDestroyDescriptorSetLayout(device, descSetLayout, nullptr);
+    }
+    vkFreeCommandBuffers(device, gCmdPool, 1, &cmdBuffer);
+    vkDestroyCommandPool(device, gCmdPool, nullptr);
+    vkDestroyDevice(device, nullptr);
+    vkDestroyInstance(gInstance, nullptr);
+}
+
 static void help()
 {
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
@@ -776,8 +822,7 @@ static bool parse_args(int argc, char **argv)
                 ERROR("Could not parse spv target env, using default: '%s'", spvTargetEnvDescription(gSpvTargetEnv));
             }
 
-        }
-            break;
+        } break;
         case 'n':
             gHotRun = atoi(optarg);
             break;
@@ -941,6 +986,8 @@ int main(int argc, char **argv)
 
     CHECK(print_results(pDevice, device, config, counters, gpu_timestamps, host_timestamps) == 0,
         "Could not print all results");
+
+    clean_vk_objects(device, cmdBuffer, descSet, descSetLayoutVector, pipelineLayout, pipeline);
 
     return 0;
 }

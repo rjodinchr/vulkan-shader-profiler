@@ -21,9 +21,9 @@ jobs:
         run: |
           git-clang-format --binary clang-format-15 --diff origin/main --extensions cpp,hpp > output.txt
           cat output.txt
-          grep "no modified files to format" output.txt
+          grep -E "(no modified files to format|clang-format did not modify any files)" output.txt
   build:
-    name: Build
+    name: Builds & Tests
     needs: format
     runs-on: ubuntu-22.04
     steps:
@@ -33,22 +33,22 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build libvulkan-dev clang-15
+          sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers libxrandr-dev
       - name: Build SPIRV-Tools
         run: |
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
-          mkdir install
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
-            -DCMAKE_INSTALL_PREFIX=install \
-            -DCMAKE_CXX_COMPILER="$(which clang++)"
-          cmake --build third_party/spirv-tools/build --target install
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/spirv-tools/build
+          cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
       - name: Build Perfetto
         run: |
           git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
           $(pwd)/third_party/perfetto/tools/install-build-deps
           $(pwd)/third_party/perfetto/tools/setup_all_configs.py
-          $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a
+          $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a perfetto traced
       - name: Build debug
         run: |
           cmake -B build_debug -S . -G Ninja \
@@ -77,3 +77,55 @@ jobs:
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build_release
+      - name: Build Vulkan-Headers
+        run: |
+          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Headers.git third_party/vulkan-headers
+          cmake -B third_party/vulkan-headers/build -S third_party/vulkan-headers -G Ninja \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_C_COMPILER="$(which clang)" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/vulkan-headers/build
+          cmake --install third_party/vulkan-headers/build --prefix $(pwd)/install/
+      - name: Build Vulkan-Loader
+        run : |
+          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
+          cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
+            -DVulkanHeaders_DIR=$(pwd)/install/share/cmake/VulkanHeaders \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_C_COMPILER="$(which clang)" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/vulkan-loader/build
+      - name: Build system
+        run: |
+          cmake -B build_system -S . -G Ninja \
+            -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
+            -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
+            -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
+            -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
+            -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
+            -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
+            -DEXTRACTOR_NOSTDINCXX=1 \
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DBACKEND=System \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_system
+      - name: Tests
+        run: |
+          $(pwd)/build_system/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm -v
+          $(pwd)/build_system/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
+          $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
+          $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
+          sleep 1
+          VK_LOADER_DEBUG=all \
+          LD_LIBRARY_PATH=$(pwd)/build_system/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
+          VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
+          VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
+          VKSP_TRACE_DEST=$(pwd)/trace \
+          $(pwd)/build_system/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
+          sleep 1
+          pkill -x perfetto
+          while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
+          $(pwd)/build_system/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
+          cat $(pwd)/tests/example-expectation.spvasm
+          diff $(pwd)/trace.spvasm $(pwd)/tests/example-expectation.spvasm
