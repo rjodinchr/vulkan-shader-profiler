@@ -41,6 +41,7 @@ jobs:
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/spirv-tools/build
           cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
       - name: Build Perfetto
         run: |
@@ -83,6 +84,7 @@ jobs:
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_C_COMPILER="$(which clang)" \
             -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/vulkan-headers/build
           cmake --install third_party/vulkan-headers/build --prefix $(pwd)/install/
       - name: Build Vulkan-Loader
         run : |
