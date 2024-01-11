@@ -117,7 +117,6 @@ jobs:
           $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
           $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
           sleep 1
-          LD_DEBUG=libs \
           VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_system/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
           VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
@@ -128,4 +127,5 @@ jobs:
           pkill -x perfetto
           while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
           $(pwd)/build_system/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
-          diff $(pwd)/trace.spvasm $(pwd)/tests/example-exepectation.spvasm
+          cat $(pwd)/tests/example-expectation.spvasm
+          diff $(pwd)/trace.spvasm $(pwd)/tests/example-expectation.spvasm
