@@ -49,7 +49,7 @@ jobs:
           git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
           $(pwd)/third_party/perfetto/tools/install-build-deps
           $(pwd)/third_party/perfetto/tools/setup_all_configs.py
-          $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a perfetto traced
+          $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a
       - name: Build debug
         run: |
           cmake -B build_debug -S . -G Ninja \
@@ -98,16 +98,12 @@ jobs:
         run: |
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
-          $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
-          $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
-          sleep 1
           LD_DEBUG=libs \
           VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
           VK_LOADER_LAYERS_ENABLE=$(pwd)/manifest/ \
           VK_ADD_LAYER_PATH="VK_LAYER_SHADER_PROFILER" \
+          VKSP_TRACE_DEST=$(pwd)/trace \
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
-          pkill -x perfetto
-          while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
           $(pwd)/build_release/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
           diff $(pwd)/trace.spvasm $(pwd)/tests/example-exepectation.spvasm
