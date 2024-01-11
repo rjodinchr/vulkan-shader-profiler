@@ -90,7 +90,7 @@ jobs:
         run : |
           git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
           cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
-            -DVulkanHeaders_DIR=$(pwd)/install \
+            -DVulkanHeaders_DIR=$(pwd)/install/share/cmake/VulkanHeaders \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/vulkan-loader/build
