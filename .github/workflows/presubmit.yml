@@ -38,12 +38,10 @@ jobs:
         run: |
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
           git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
-          mkdir install
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
-            -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build third_party/spirv-tools/build --target install
+          cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
       - name: Build Perfetto
         run: |
           git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
@@ -82,11 +80,10 @@ jobs:
         run: |
           git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Headers.git third_party/vulkan-headers
           cmake -B third_party/vulkan-headers/build -S third_party/vulkan-headers -G Ninja \
-            -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_C_COMPILER="$(which clang)" \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build third_party/vulkan-headers/build --target install
+          cmake --install third_party/vulkan-headers/build --prefix $(pwd)/install/
       - name: Build Vulkan-Loader
         run : |
           git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
@@ -98,7 +95,7 @@ jobs:
           cmake --build third_party/vulkan-loader/build
       - name: Tests
         run: |
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
+          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm -v
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
           VK_LOADER_DEBUG=all \
           LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
