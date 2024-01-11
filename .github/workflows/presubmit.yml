@@ -80,7 +80,7 @@ jobs:
           cmake --build build_release
       - name: Build Vulkan-Headers
         run: |
-          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-headers
+          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Headers.git third_party/vulkan-headers
           cmake -B third_party/vulkan-headers/build -S third_party/vulkan-headers -G Ninja \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
