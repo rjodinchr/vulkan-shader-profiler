@@ -95,22 +95,37 @@ jobs:
             -DCMAKE_C_COMPILER="$(which clang)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/vulkan-loader/build
+      - name: Build system
+        run: |
+          cmake -B build_system -S . -G Ninja \
+            -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
+            -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
+            -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
+            -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
+            -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
+            -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
+            -DEXTRACTOR_NOSTDINCXX=1 \
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DBACKEND=System \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_system
       - name: Tests
         run: |
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm -v
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
+          $(pwd)/build_system/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm -v
+          $(pwd)/build_system/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
           $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
           $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
           sleep 1
           LD_DEBUG=libs \
           VK_LOADER_DEBUG=all \
-          LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
+          LD_LIBRARY_PATH=$(pwd)/build_system/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
           VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
           VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
           VKSP_TRACE_DEST=$(pwd)/trace \
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
+          $(pwd)/build_system/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           sleep 1
           pkill -x perfetto
           while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
-          $(pwd)/build_release/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
+          $(pwd)/build_system/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
           diff $(pwd)/trace.spvasm $(pwd)/tests/example-exepectation.spvasm
