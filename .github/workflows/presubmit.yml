@@ -78,10 +78,19 @@ jobs:
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build_release
+      - name: Build Vulkan-Headers
+        run: |
+          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-headers
+          cmake -B third_party/vulkan-headers/build -S third_party/vulkan-headers -G Ninja \
+            -DCMAKE_INSTALL_PREFIX=install \
+            -DCMAKE_CXX_COMPILER="$(which clang++)" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/vulkan-headers/build --target install
       - name: Build Vulkan-Loader
         run : |
           git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
           cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
+            -DVulkanHeaders_DIR=$(pwd)/install \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/vulkan-loader/build
