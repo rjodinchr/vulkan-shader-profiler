@@ -45,6 +45,10 @@ cmake -B <build_dir> -S <path-to-vulkan-kernel-profiler> -DPERFETTO_SDK_PATH=<pa
 cmake --build <build_dir>
 ```
 
+For a real life eaxmple, have a look at:
+- ChromeOS [ebuild](https://chromium.googlesource.com/chromiumos/overlays/chromiumos-overlay/+/main/dev-libs/vulkan-shader-profiler/vulkan-shader-profiler-0.0.1.ebuild)
+- Github presubmit [configuration](https://github.com/rjodinchr/vulkan-shader-profiler/blob/main/.github/workflows/presubmit.yml)
+
 ## Build options
 
 * `PERFETTO_SDK_PATH` (REQUIRED): path to [perfetto](https://github.com/google/perfetto) sdk (`vulkan-kernel-profiler` is looking for `PERFETTO_SDK_PATH/perfetto.cc` and `PERFETTO_SDK_PATH/perfetto.h`).
