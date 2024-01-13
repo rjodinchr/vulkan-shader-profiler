@@ -561,6 +561,7 @@ static void GenerateTrace(ThreadInfo *info, ThreadDispatch &cmd)
 
 static void QueueThreadFct(ThreadInfo *info)
 {
+    pthread_setname_np(pthread_self(), "vksp");
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY,
         perfetto::DynamicString("vksp-queue_" + std::to_string((uintptr_t)info->queue)),
         perfetto::Track((uintptr_t)info->queue));

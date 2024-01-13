@@ -802,6 +802,7 @@ static void help()
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
            "\n"
            "OPTIONS:\n"
+           "\t-e\tspv_target_env to use (default: vulkan1.3)\n"
            "\t-h\tDisplay this help and exit\n"
            "\t-m\tNumber of cold run\n"
            "\t-n\tNumber of hot run\n"
