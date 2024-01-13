@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library (vulkan-shader-profiler MODULE layer.cpp ${PERFETTO_SDK_PATH}/perfetto.cc)
+if (NOT PERFETTO_LIBRARY)
+  add_library(perfetto STATIC ${PERFETTO_SDK_PATH}/perfetto.cc)
+  set_target_properties(perfetto PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  set(PERFETTO_LIBRARY perfetto)
+endif()
+
+add_library (vulkan-shader-profiler MODULE layer.cpp)
 target_include_directories(vulkan-shader-profiler PUBLIC ${Vulkan_INCLUDE_DIRS} ${PERFETTO_SDK_PATH} ${SPIRV-Tools-opt_INCLUDE_DIRS})
-target_link_libraries (vulkan-shader-profiler ${SPIRV-Tools-opt_LIBRARIES})
+target_link_libraries (vulkan-shader-profiler ${SPIRV-Tools-opt_LIBRARIES} ${PERFETTO_LIBRARY})
 
 set(BACKEND "InProcess"
   CACHE STRING "Select perfetto backend")
