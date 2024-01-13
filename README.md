@@ -55,6 +55,7 @@ For a real life examples, have a look at:
 * `PERFETTO_TRACE_PROCESSOR_LIB` (REQUIRED): path to `libtrace_processor.a` produces by a perfetto build.
 * `PERFETTO_INTERNAL_INCLUDE_PATH` (REQUIRED): path to perfetto internal include directory (`<perfetto>/include`), or where it is installed.
 * OPTIONAL:
+  * `PERFETTO_LIBRARY`: name of a perfetto library already available (avoid having to compile `perfetto.cc`).
   * `PERFETTO_GEN_INCLUDE_PATH`: path to a a perfetto build (if not installed) `<perfetto>/out/release/gen/build_config`.
   * `PERFETTO_CXX_CONFIG_INCLUDE_PATH`: path to perfetto buildtools config `<perfetto>/buildtools/libcxx_config`.
   * `PERFETTO_CXX_SYSTEM_INCLUDE_PATH`: path to perfetto buildtools include `<perfetto>/buildtools/libcxx/include`.
