@@ -73,266 +73,44 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
 /* GLOBAL VARIABLES & TYPES **************************************************/
 /*****************************************************************************/
 
+// clang-format off
 static std::string byteToStr[] = {
-    "00",
-    "01",
-    "02",
-    "03",
-    "04",
-    "05",
-    "06",
-    "07",
-    "08",
-    "09",
-    "0a",
-    "0b",
-    "0c",
-    "0d",
-    "0e",
-    "0f",
-    "10",
-    "11",
-    "12",
-    "13",
-    "14",
-    "15",
-    "16",
-    "17",
-    "18",
-    "19",
-    "1a",
-    "1b",
-    "1c",
-    "1d",
-    "1e",
-    "1f",
-    "20",
-    "21",
-    "22",
-    "23",
-    "24",
-    "25",
-    "26",
-    "27",
-    "28",
-    "29",
-    "2a",
-    "2b",
-    "2c",
-    "2d",
-    "2e",
-    "2f",
-    "30",
-    "31",
-    "32",
-    "33",
-    "34",
-    "35",
-    "36",
-    "37",
-    "38",
-    "39",
-    "3a",
-    "3b",
-    "3c",
-    "3d",
-    "3e",
-    "3f",
-    "40",
-    "41",
-    "42",
-    "43",
-    "44",
-    "45",
-    "46",
-    "47",
-    "48",
-    "49",
-    "4a",
-    "4b",
-    "4c",
-    "4d",
-    "4e",
-    "4f",
-    "50",
-    "51",
-    "52",
-    "53",
-    "54",
-    "55",
-    "56",
-    "57",
-    "58",
-    "59",
-    "5a",
-    "5b",
-    "5c",
-    "5d",
-    "5e",
-    "5f",
-    "60",
-    "61",
-    "62",
-    "63",
-    "64",
-    "65",
-    "66",
-    "67",
-    "68",
-    "69",
-    "6a",
-    "6b",
-    "6c",
-    "6d",
-    "6e",
-    "6f",
-    "70",
-    "71",
-    "72",
-    "73",
-    "74",
-    "75",
-    "76",
-    "77",
-    "78",
-    "79",
-    "7a",
-    "7b",
-    "7c",
-    "7d",
-    "7e",
-    "7f",
-    "80",
-    "81",
-    "82",
-    "83",
-    "84",
-    "85",
-    "86",
-    "87",
-    "88",
-    "89",
-    "8a",
-    "8b",
-    "8c",
-    "8d",
-    "8e",
-    "8f",
-    "90",
-    "91",
-    "92",
-    "93",
-    "94",
-    "95",
-    "96",
-    "97",
-    "98",
-    "99",
-    "9a",
-    "9b",
-    "9c",
-    "9d",
-    "9e",
-    "9f",
-    "a0",
-    "a1",
-    "a2",
-    "a3",
-    "a4",
-    "a5",
-    "a6",
-    "a7",
-    "a8",
-    "a9",
-    "aa",
-    "ab",
-    "ac",
-    "ad",
-    "ae",
-    "af",
-    "b0",
-    "b1",
-    "b2",
-    "b3",
-    "b4",
-    "b5",
-    "b6",
-    "b7",
-    "b8",
-    "b9",
-    "ba",
-    "bb",
-    "bc",
-    "bd",
-    "be",
-    "bf",
-    "c0",
-    "c1",
-    "c2",
-    "c3",
-    "c4",
-    "c5",
-    "c6",
-    "c7",
-    "c8",
-    "c9",
-    "ca",
-    "cb",
-    "cc",
-    "cd",
-    "ce",
-    "cf",
-    "d0",
-    "d1",
-    "d2",
-    "d3",
-    "d4",
-    "d5",
-    "d6",
-    "d7",
-    "d8",
-    "d9",
-    "da",
-    "db",
-    "dc",
-    "dd",
-    "de",
-    "df",
-    "e0",
-    "e1",
-    "e2",
-    "e3",
-    "e4",
-    "e5",
-    "e6",
-    "e7",
-    "e8",
-    "e9",
-    "ea",
-    "eb",
-    "ec",
-    "ed",
-    "ee",
-    "ef",
-    "f0",
-    "f1",
-    "f2",
-    "f3",
-    "f4",
-    "f5",
-    "f6",
-    "f7",
-    "f8",
-    "f9",
-    "fa",
-    "fb",
-    "fc",
-    "fd",
-    "fe",
-    "ff",
+    "00", "01", "02", "03", "04", "05", "06", "07",
+    "08", "09", "0a", "0b", "0c", "0d", "0e", "0f",
+    "10", "11", "12", "13", "14", "15", "16", "17",
+    "18", "19", "1a", "1b", "1c", "1d", "1e", "1f",
+    "20", "21", "22", "23", "24", "25", "26", "27",
+    "28", "29", "2a", "2b", "2c", "2d", "2e", "2f",
+    "30", "31", "32", "33", "34", "35", "36", "37",
+    "38", "39", "3a", "3b", "3c", "3d", "3e", "3f",
+    "40", "41", "42", "43", "44", "45", "46", "47",
+    "48", "49", "4a", "4b", "4c", "4d", "4e", "4f",
+    "50", "51", "52", "53", "54", "55", "56", "57",
+    "58", "59", "5a", "5b", "5c", "5d", "5e", "5f",
+    "60", "61", "62", "63", "64", "65", "66", "67",
+    "68", "69", "6a", "6b", "6c", "6d", "6e", "6f",
+    "70", "71", "72", "73", "74", "75", "76", "77",
+    "78", "79", "7a", "7b", "7c", "7d", "7e", "7f",
+    "80", "81", "82", "83", "84", "85", "86", "87",
+    "88", "89", "8a", "8b", "8c", "8d", "8e", "8f",
+    "90", "91", "92", "93", "94", "95", "96", "97",
+    "98", "99", "9a", "9b", "9c", "9d", "9e", "9f",
+    "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
+    "a8", "a9", "aa", "ab", "ac", "ad", "ae", "af",
+    "b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7",
+    "b8", "b9", "ba", "bb", "bc", "bd", "be", "bf",
+    "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7",
+    "c8", "c9", "ca", "cb", "cc", "cd", "ce", "cf",
+    "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
+    "d8", "d9", "da", "db", "dc", "dd", "de", "df",
+    "e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7",
+    "e8", "e9", "ea", "eb", "ec", "ed", "ee", "ef",
+    "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7",
+    "f8", "f9", "fa", "fb", "fc", "fd", "fe", "ff",
 };
+// clang-format on
 
-static std::recursive_mutex glock;
+static std::mutex glock;
 
 typedef struct DispatchTable_ {
 #define FUNC_INS DISPATCH_TABLE_ELEMENT
@@ -519,9 +297,6 @@ static ThreadJob *get_job(ThreadInfo *info)
             VKSP_PERFETTO_CATEGORY, "vksp_wait", "device", (void *)info->device, "queue", (void *)info->queue);
         info->cv.wait(lock);
         TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY);
-        if (info->jobs.empty() && info->stop) {
-            return (ThreadJob *)nullptr;
-        }
     }
     auto job = info->jobs.front();
     info->jobs.pop();
@@ -572,7 +347,6 @@ static void QueueThreadFct(ThreadInfo *info)
         }
 
         // Wait for job completion
-        VkResult result = WaitSemaphore(info, job);
         if (WaitSemaphore(info, job) != VK_SUCCESS) {
             delete job;
             continue;
@@ -596,7 +370,7 @@ static void QueueThreadFct(ThreadInfo *info)
 
 void VKAPI_CALL vksp_GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkGetDeviceQueue", "device", (void *)device);
 
     DISPATCH(device).GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
@@ -609,7 +383,7 @@ void VKAPI_CALL vksp_GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, 
 
 VkResult VKAPI_CALL vksp_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkQueueSubmit", "queue", (void *)queue, "submitCount", submitCount);
 
     auto info = QueueToThreadInfo[queue];
@@ -684,7 +458,7 @@ VkResult VKAPI_CALL vksp_QueueSubmit(VkQueue queue, uint32_t submitCount, const 
 VkResult VKAPI_CALL vksp_AllocateCommandBuffers(
     VkDevice device, const VkCommandBufferAllocateInfo *pAllocateInfo, VkCommandBuffer *pCommandBuffers)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkAllocateCommandBuffers", "device", (void *)device);
 
     VkResult result = DISPATCH(device).AllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
@@ -702,7 +476,7 @@ VkResult VKAPI_CALL vksp_AllocateCommandBuffers(
 void VKAPI_CALL vksp_FreeCommandBuffers(
     VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkFreeCommandBuffers", "device", (void *)device, "commandBufferCount",
         commandBufferCount);
 
@@ -716,7 +490,7 @@ void VKAPI_CALL vksp_FreeCommandBuffers(
 
 VkResult VKAPI_CALL vksp_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBeginCommandBuffer", "commandBuffer", (void *)commandBuffer);
 
     CmdBufferToThreadDispatch[commandBuffer].clear();
@@ -728,7 +502,7 @@ static uint64_t dispatchId = 0;
 void VKAPI_CALL vksp_CmdDispatch(
     VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     auto device = CmdBufferToDevice[commandBuffer];
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdDispatch", "device", (void *)device, "commandBuffer",
         (void *)commandBuffer, "groupCountX", groupCountX, "groupCountY", groupCountY, "groupCountZ", groupCountZ,
@@ -769,7 +543,7 @@ void VKAPI_CALL vksp_CmdDispatch(
 void VKAPI_CALL vksp_CmdBindPipeline(
     VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdBindPipeline", "commandBuffer", (void *)commandBuffer);
 
     CmdBufferToPipeline[commandBuffer] = pipeline;
@@ -781,7 +555,7 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     uint32_t createInfoCount, const VkComputePipelineCreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator,
     VkPipeline *pPipelines)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "module",
         (void *)pCreateInfos->stage.module, "createInfoCount", createInfoCount);
 
@@ -817,7 +591,7 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
 VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
     const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     std::string shader_str = std::string("vksp_s") + std::to_string(shader_number++);
 
     const spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
@@ -856,7 +630,7 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
     const VkWriteDescriptorSet *pDescriptorWrites, uint32_t descriptorCopyCount,
     const VkCopyDescriptorSet *pDescriptorCopies)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets", "device", (void *)device, "descriptorWriteCount",
         descriptorWriteCount, "descriptorCopyCount", descriptorCopyCount);
 
@@ -901,7 +675,7 @@ void VKAPI_CALL vksp_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipe
     VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
     uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     auto device = CmdBufferToDevice[commandBuffer];
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdBindDescriptorSets", "device", (void *)device, "commandBuffer",
         (void *)commandBuffer, "pipelineBindPoint", pipelineBindPoint, "firstSet", firstSet, "descriptorSetCount",
@@ -920,7 +694,7 @@ void VKAPI_CALL vksp_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipe
 VkResult VKAPI_CALL vksp_CreateBuffer(
     VkDevice device, const VkBufferCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateBuffer", "device", (void *)device);
 
     auto result = DISPATCH(device).CreateBuffer(device, pCreateInfo, pAllocator, pBuffer);
@@ -935,7 +709,7 @@ VkResult VKAPI_CALL vksp_CreateBuffer(
 void VKAPI_CALL vksp_CmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
     VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void *pValues)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     auto device = CmdBufferToDevice[commandBuffer];
     std::string pValuesStr = "";
     for (unsigned i = 0; i < size; i++) {
@@ -951,7 +725,7 @@ void VKAPI_CALL vksp_CmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineL
 VkResult VKAPI_CALL vksp_AllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
     const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkAllocateMemory", "device", (void *)device);
 
     auto result = DISPATCH(device).AllocateMemory(device, pAllocateInfo, pAllocator, pMemory);
@@ -965,19 +739,17 @@ VkResult VKAPI_CALL vksp_AllocateMemory(VkDevice device, const VkMemoryAllocateI
 VkResult VKAPI_CALL vksp_BindBufferMemory(
     VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBindBufferMemory", "device", (void *)device, "buffer", (void *)buffer,
         "memory", (void *)memory, "offset", memoryOffset);
 
     return DISPATCH(device).BindBufferMemory(device, buffer, memory, memoryOffset);
 }
 
-VkResult VKAPI_CALL vksp_CreateImageView(
-    VkDevice                                    device,
-    const VkImageViewCreateInfo*                pCreateInfo,
-    const VkAllocationCallbacks*                pAllocator,
-    VkImageView*                                pView) {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+VkResult VKAPI_CALL vksp_CreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkImageView *pView)
+{
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImageView", "device", (void *)device);
 
     auto result = DISPATCH(device).CreateImageView(device, pCreateInfo, pAllocator, pView);
@@ -996,7 +768,7 @@ VkResult VKAPI_CALL vksp_CreateImageView(
 VkResult VKAPI_CALL vksp_BindImageMemory(
     VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBindImageMemory", "device", (void *)device, "image", (void *)image, "memory",
         (void *)memory, "offset", memoryOffset);
 
@@ -1006,7 +778,7 @@ VkResult VKAPI_CALL vksp_BindImageMemory(
 VkResult VKAPI_CALL vksp_CreateImage(
     VkDevice device, const VkImageCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkImage *pImage)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImage", "device", (void *)device);
 
     auto result = DISPATCH(device).CreateImage(device, pCreateInfo, pAllocator, pImage);
@@ -1024,7 +796,7 @@ VkResult VKAPI_CALL vksp_CreateImage(
 VkResult VKAPI_CALL vksp_CreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
     const VkAllocationCallbacks *pAllocator, VkSampler *pSampler)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateSampler", "device", (void *)device);
 
     auto result = DISPATCH(device).CreateSampler(device, pCreateInfo, pAllocator, pSampler);
@@ -1048,7 +820,7 @@ VkResult VKAPI_CALL vksp_CreateSampler(VkDevice device, const VkSamplerCreateInf
 VkResult VKAPI_CALL vksp_CreateInstance(
     const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkInstance *pInstance)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     VkLayerInstanceCreateInfo *layerCreateInfo = (VkLayerInstanceCreateInfo *)pCreateInfo->pNext;
 
     while (layerCreateInfo
@@ -1105,7 +877,7 @@ VkResult VKAPI_CALL vksp_CreateInstance(
 
 void VKAPI_CALL vksp_DestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
 
 #ifdef BACKEND_INPROCESS
     gTracingSession->StopBlocking();
@@ -1125,7 +897,7 @@ void VKAPI_CALL vksp_DestroyInstance(VkInstance instance, const VkAllocationCall
 VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
     const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateDevice");
 
     std::string ppEnabledExtensionNamesConcat;
@@ -1182,7 +954,7 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
 
 void VKAPI_CALL vksp_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
     for (auto &[queue, thread] : QueueThreadPool[device]) {
         auto info = QueueToThreadInfo[queue];
         {
@@ -1206,7 +978,7 @@ extern "C" {
 
 PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char *pName)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
 
     if (DeviceNotToTrace.count(device) == 0) {
 #define FUNC_DEV GET_PROC_ADDR
@@ -1218,7 +990,7 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char
 
 PFN_vkVoidFunction VKAPI_CALL vksp_GetInstanceProcAddr(VkInstance instance, const char *pName)
 {
-    std::lock_guard<std::recursive_mutex> lock(glock);
+    std::lock_guard<std::mutex> lock(glock);
 
 #define FUNC_INS GET_PROC_ADDR
 #include "functions.def"
