@@ -103,6 +103,7 @@ jobs:
           VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
           VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
           VKSP_TRACE_DEST=$(pwd)/trace \
+          VKSP_SHADER_TEXT_BLOCK_SIZE=1024 \
           $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
           sleep 1
           pkill -x perfetto

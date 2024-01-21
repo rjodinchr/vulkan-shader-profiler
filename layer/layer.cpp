@@ -216,6 +216,14 @@ static const uint32_t get_trace_max_size()
 }
 #endif
 
+static uint32_t gBlockSize = 64 * 1024;
+static void update_block_size()
+{
+    if (auto block_size = getenv("VKSP_SHADER_TEXT_BLOCK_SIZE")) {
+        gBlockSize = atoi(block_size);
+    }
+}
+
 /*****************************************************************************/
 /* QUEUE THREAD **************************************************************/
 /*****************************************************************************/
@@ -594,6 +602,9 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
     std::lock_guard<std::mutex> lock(glock);
     std::string shader_str = std::string("vksp_s") + std::to_string(shader_number++);
 
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule", "device", (void *)device, "shader",
+        perfetto::DynamicString(shader_str), "flags", pCreateInfo->flags, "code_size", pCreateInfo->codeSize);
+
     const spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
     spv_text text;
     spv_diagnostic diag;
@@ -603,14 +614,18 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
         SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
         &text, &diag);
     if (spv_result == SPV_SUCCESS) {
-        TRACE_EVENT_BEGIN(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule", "device", (void *)device, "shader",
-            perfetto::DynamicString(shader_str), "flags", pCreateInfo->flags, "code_size", code_size, "spv_result",
-            spv_result, "text", perfetto::DynamicString(text->str));
+        std::string text_str(text->str);
+        for (unsigned i = 0; i < text_str.size(); i += gBlockSize) {
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-text", "shader",
+                perfetto::DynamicString(shader_str), "text", perfetto::DynamicString(text_str.substr(i, gBlockSize)));
+            // let's wait a bit to let perfetto have the time to record everything correctly
+            usleep(1);
+        }
         spvTextDestroy(text);
     } else {
-        TRACE_EVENT_BEGIN(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule", "device", (void *)device, "shader",
-            perfetto::DynamicString(shader_str), "flags", pCreateInfo->flags, "code_size", code_size, "spv_result",
-            spv_result, "error", perfetto::DynamicString(diag->error));
+        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-result", "shader",
+            perfetto::DynamicString(shader_str), "spv_result", spv_result, "diag",
+            perfetto::DynamicString(diag->error));
         spvDiagnosticDestroy(diag);
     }
     spvContextDestroy(context);
@@ -622,7 +637,6 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
 
     ShaderModuleToString[*pShaderModule] = shader_str;
 
-    TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY);
     return result;
 }
 
@@ -872,6 +886,17 @@ VkResult VKAPI_CALL vksp_CreateInstance(
     gTracingSession->StartBlocking();
 #endif
 
+    update_block_size();
+
+    const uint32_t max_retry = 100;
+    uint32_t retry = 0;
+    while ((retry++ < max_retry) && !TRACE_EVENT_CATEGORY_ENABLED(VKSP_PERFETTO_CATEGORY)) {
+        usleep(1);
+    }
+    if (!TRACE_EVENT_CATEGORY_ENABLED(VKSP_PERFETTO_CATEGORY)) {
+        PRINT("perfetto category does not seem to be enabled");
+    }
+
     return VK_SUCCESS;
 }
 
@@ -887,6 +912,8 @@ void VKAPI_CALL vksp_DestroyInstance(VkInstance instance, const VkAllocationCall
     output.open(get_trace_dest(), std::ios::out | std::ios::binary);
     output.write(&trace_data[0], trace_data.size());
     output.close();
+#else
+    perfetto::TrackEvent::Flush();
 #endif
 
     auto DestroyInstance = DISPATCH(instance).DestroyInstance;

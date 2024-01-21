@@ -172,15 +172,10 @@ bool get_shader_module_and_device_from_compute(TraceProcessor *tp, uint64_t comp
         + std::string(config.shaderName)
         + "' = (SELECT string_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.shader')";
     EXECUTE_QUERY(it, tp, query);
-    uint64_t shader_text_arg_set_id = it.Get(0).AsLong();
+    uint64_t shader_device_arg_set_id = it.Get(0).AsLong();
     assert(!it.Next());
 
-    char *shaderCStr;
-    GET_STR_VALUE(tp, shader_text_arg_set_id, "debug.text", shaderCStr);
-    GET_INT_VALUE(tp, shader_text_arg_set_id, "debug.device", device);
-
-    shader = std::string(shaderCStr);
-    free(shaderCStr);
+    GET_INT_VALUE(tp, shader_device_arg_set_id, "debug.device", device);
 
     std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-module' AND '"
         + std::string(config.shaderName)
@@ -190,6 +185,22 @@ bool get_shader_module_and_device_from_compute(TraceProcessor *tp, uint64_t comp
     assert(!it2.Next());
 
     GET_INT_VALUE(tp, shader_module_arg_set_id, "debug.module", module);
+
+    std::string query3 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-text' AND '"
+        + std::string(config.shaderName)
+        + "' = (SELECT string_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.shader') "
+          "ORDER BY ts ASC";
+    EXECUTE_QUERY(it3, tp, query3);
+
+    shader = "";
+    do {
+        uint64_t shader_text_arg_set_id = it3.Get(0).AsLong();
+        char *shaderCStr;
+        GET_STR_VALUE(tp, shader_text_arg_set_id, "debug.text", shaderCStr);
+
+        shader += std::string(shaderCStr);
+        free(shaderCStr);
+    } while (it3.Next());
 
     return true;
 }
