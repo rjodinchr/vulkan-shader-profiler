@@ -872,6 +872,15 @@ VkResult VKAPI_CALL vksp_CreateInstance(
     gTracingSession->StartBlocking();
 #endif
 
+    const uint32_t max_retry = 100;
+    uint32_t retry = 0;
+    while ((retry++ < max_retry) && !TRACE_EVENT_CATEGORY_ENABLED(VKSP_PERFETTO_CATEGORY)) {
+        usleep(1);
+    }
+    if (!TRACE_EVENT_CATEGORY_ENABLED(VKSP_PERFETTO_CATEGORY)) {
+        PRINT("perfetto category does not seem to be enabled");
+    }
+
     return VK_SUCCESS;
 }
 
