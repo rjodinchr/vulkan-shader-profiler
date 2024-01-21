@@ -887,6 +887,8 @@ void VKAPI_CALL vksp_DestroyInstance(VkInstance instance, const VkAllocationCall
     output.open(get_trace_dest(), std::ios::out | std::ios::binary);
     output.write(&trace_data[0], trace_data.size());
     output.close();
+#else
+    perfetto::TrackEvent::Flush();
 #endif
 
     auto DestroyInstance = DISPATCH(instance).DestroyInstance;
