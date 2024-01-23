@@ -552,7 +552,8 @@ void VKAPI_CALL vksp_CmdBindPipeline(
     VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
 {
     std::lock_guard<std::mutex> lock(glock);
-    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdBindPipeline", "commandBuffer", (void *)commandBuffer);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCmdBindPipeline", "commandBuffer", (void *)commandBuffer, "pipeline",
+        (void *)pipeline);
 
     CmdBufferToPipeline[commandBuffer] = pipeline;
 
@@ -564,33 +565,33 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     VkPipeline *pPipelines)
 {
     std::lock_guard<std::mutex> lock(glock);
-    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "module",
-        (void *)pCreateInfos->stage.module, "createInfoCount", createInfoCount);
-
-    auto specializationInfo = pCreateInfos->stage.pSpecializationInfo;
-    if (specializationInfo != nullptr) {
-        std::string pData = "";
-        for (unsigned i = 0; i < specializationInfo->dataSize; i++) {
-            pData += byteToStr[((unsigned char *)specializationInfo->pData)[i]];
-        }
-        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-specialization", "module",
-            (void *)pCreateInfos->stage.module, "mapEntryCount", specializationInfo->mapEntryCount, "dataSize",
-            specializationInfo->dataSize, "pData", perfetto::DynamicString(pData));
-
-        for (unsigned i = 0; i < specializationInfo->mapEntryCount; i++) {
-            auto &mapEntry = specializationInfo->pMapEntries[i];
-            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-MapEntry", "module",
-                (void *)pCreateInfos->stage.module, "constantID", mapEntry.constantID, "offset", mapEntry.offset,
-                "size", mapEntry.size);
-        }
-    }
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "createInfoCount",
+        createInfoCount);
 
     VkResult result = DISPATCH(device).CreateComputePipelines(
         device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
 
-    for (unsigned i = 0; i < createInfoCount; i++) {
-        PipelineToShaderModule[pPipelines[i]] = pCreateInfos[i].stage.module;
-        PipelineToShaderModuleName[pPipelines[i]] = std::string(pCreateInfos[i].stage.pName);
+    for (unsigned j = 0; j < createInfoCount; j++) {
+        PipelineToShaderModule[pPipelines[j]] = pCreateInfos[j].stage.module;
+        PipelineToShaderModuleName[pPipelines[j]] = std::string(pCreateInfos[j].stage.pName);
+
+        auto specializationInfo = pCreateInfos[j].stage.pSpecializationInfo;
+        if (specializationInfo != nullptr) {
+            std::string pData = "";
+            for (unsigned i = 0; i < specializationInfo->dataSize; i++) {
+                pData += byteToStr[((unsigned char *)specializationInfo->pData)[i]];
+            }
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-specialization", "mapEntryCount",
+                specializationInfo->mapEntryCount, "dataSize", specializationInfo->dataSize, "pData",
+                perfetto::DynamicString(pData), "pipeline", (void *)pPipelines[j]);
+
+            for (unsigned i = 0; i < specializationInfo->mapEntryCount; i++) {
+                auto &mapEntry = specializationInfo->pMapEntries[i];
+                TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-MapEntry", "constantID",
+                    mapEntry.constantID, "offset", mapEntry.offset, "size", mapEntry.size, "pipeline",
+                    (void *)pPipelines[j]);
+            }
+        }
     }
 
     return result;
@@ -631,9 +632,6 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
     spvContextDestroy(context);
 
     VkResult result = DISPATCH(device).CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
-
-    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-module", "device", (void *)device, "shader",
-        perfetto::DynamicString(shader_str), "module", (void *)*pShaderModule);
 
     ShaderModuleToString[*pShaderModule] = shader_str;
 

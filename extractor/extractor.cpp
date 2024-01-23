@@ -163,8 +163,8 @@ bool get_min_timestamp(TraceProcessor *tp, uint64_t commandBUffer, uint64_t max_
     return true;
 }
 
-bool get_shader_module_and_device_from_compute(TraceProcessor *tp, uint64_t compute, std::string &shader,
-    uint64_t &device, uint64_t &module, vksp_configuration &config)
+bool get_shader_and_device_from_compute(
+    TraceProcessor *tp, uint64_t compute, std::string &shader, uint64_t &device, vksp_configuration &config)
 {
     GET_STR_VALUE(tp, compute, "debug.shader", config.shaderName);
 
@@ -177,30 +177,21 @@ bool get_shader_module_and_device_from_compute(TraceProcessor *tp, uint64_t comp
 
     GET_INT_VALUE(tp, shader_device_arg_set_id, "debug.device", device);
 
-    std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-module' AND '"
-        + std::string(config.shaderName)
-        + "' = (SELECT string_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.shader')";
-    EXECUTE_QUERY(it2, tp, query2);
-    uint64_t shader_module_arg_set_id = it2.Get(0).AsLong();
-    assert(!it2.Next());
-
-    GET_INT_VALUE(tp, shader_module_arg_set_id, "debug.module", module);
-
-    std::string query3 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-text' AND '"
+    std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-text' AND '"
         + std::string(config.shaderName)
         + "' = (SELECT string_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.shader') "
           "ORDER BY ts ASC";
-    EXECUTE_QUERY(it3, tp, query3);
+    EXECUTE_QUERY(it2, tp, query2);
 
     shader = "";
     do {
-        uint64_t shader_text_arg_set_id = it3.Get(0).AsLong();
+        uint64_t shader_text_arg_set_id = it2.Get(0).AsLong();
         char *shaderCStr;
         GET_STR_VALUE(tp, shader_text_arg_set_id, "debug.text", shaderCStr);
 
         shader += std::string(shaderCStr);
         free(shaderCStr);
-    } while (it3.Next());
+    } while (it2.Next());
 
     return true;
 }
@@ -490,15 +481,25 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
     return true;
 }
 
-bool get_map_entries_from_module(TraceProcessor *tp, uint64_t module,
+bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max_timestamp,
     std::vector<vksp_specialization_map_entry> &map_entry_vector, vksp_configuration &config)
 {
-    std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-MapEntry' AND "
-        + std::to_string(module)
-        + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.module')";
-    EXECUTE_QUERY_NO_CHECK(it, tp, query);
-    while (it.Next()) {
-        uint64_t arg_set_id = it.Get(0).AsLong();
+    std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCmdBindPipeline' AND "
+        + std::to_string(commandBuffer)
+        + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
+          "'debug.commandBuffer') AND slice.ts < "
+        + std::to_string(max_timestamp) + " ORDER BY ts DESC";
+    EXECUTE_QUERY(it, tp, query);
+    uint64_t pipeline_arg_set_id = it.Get(0).AsLong();
+    uint64_t pipeline;
+    GET_INT_VALUE(tp, pipeline_arg_set_id, "debug.pipeline", pipeline);
+
+    std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-MapEntry' AND "
+        + std::to_string(pipeline)
+        + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pipeline')";
+    EXECUTE_QUERY_NO_CHECK(it2, tp, query2);
+    while (it2.Next()) {
+        uint64_t arg_set_id = it2.Get(0).AsLong();
         vksp_specialization_map_entry me;
         GET_INT_VALUE(tp, arg_set_id, "debug.constantID", me.constantID);
         GET_INT_VALUE(tp, arg_set_id, "debug.offset", me.offset);
@@ -506,15 +507,16 @@ bool get_map_entries_from_module(TraceProcessor *tp, uint64_t module,
         map_entry_vector.push_back(me);
     }
 
-    std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-specialization' AND "
-        + std::to_string(module)
-        + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.module')";
-    EXECUTE_QUERY_NO_CHECK(it2, tp, query2);
-    if (it2.Next()) {
-        uint64_t arg_set_id = it2.Get(0).AsLong();
+    std::string query3
+        = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-specialization' AND "
+        + std::to_string(pipeline)
+        + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pipeline')";
+    EXECUTE_QUERY_NO_CHECK(it3, tp, query3);
+    if (it3.Next()) {
+        uint64_t arg_set_id = it3.Get(0).AsLong();
         GET_INT_VALUE(tp, arg_set_id, "debug.dataSize", config.specializationInfoDataSize);
         GET_STR_VALUE(tp, arg_set_id, "debug.pData", config.specializationInfoData);
-        assert(!it2.Next());
+        assert(!it3.Next());
     } else {
         config.specializationInfoDataSize = 0;
         config.specializationInfoData = strdup("");
@@ -593,24 +595,11 @@ int main(int argc, char **argv)
         config.groupCountZ);
 
     std::string shader;
-    uint64_t device, module;
-    CHECK(get_shader_module_and_device_from_compute(tp.get(), compute, shader, device, module, config),
+    uint64_t device;
+    CHECK(get_shader_and_device_from_compute(tp.get(), compute, shader, device, config),
         "Could not get shader from compute");
     PRINT("Device: %lu", device);
-    PRINT("Module: %lu", module);
     PRINT("Shader from compute (name: '%s'):\n%s", config.shaderName, shader.c_str());
-
-    std::vector<vksp_specialization_map_entry> map_entry_vector;
-    CHECK(get_map_entries_from_module(tp.get(), module, map_entry_vector, config),
-        "Could not get map entries from module");
-    PRINT("specialization info data (size %u): '%s'", config.specializationInfoDataSize, config.specializationInfoData);
-    for (auto &me : map_entry_vector) {
-        PRINT("map_entry: constantID %u offset %u size %u", me.constantID, me.offset, me.size);
-    }
-
-    CHECK(get_extensions_from_device(tp.get(), device, config.enabledExtensionNames),
-        "Could not get features and extensions names from device");
-    PRINT("Extensions: '%s'", config.enabledExtensionNames);
 
     uint64_t max_timestamp;
     CHECK(get_max_timestamp(tp.get(), dispatch, max_timestamp), "Could not get max_timestamp");
@@ -619,6 +608,18 @@ int main(int argc, char **argv)
     uint64_t min_timestamp;
     CHECK(get_min_timestamp(tp.get(), commandBuffer, max_timestamp, min_timestamp), "Could not get min_timestamp");
     PRINT("Min timestamp: %lu", min_timestamp);
+
+    std::vector<vksp_specialization_map_entry> map_entry_vector;
+    CHECK(get_map_entries_from_cmd_buffer(tp.get(), commandBuffer, max_timestamp, map_entry_vector, config),
+        "Could not get map entries from command buffer");
+    PRINT("specialization info data (size %u): '%s'", config.specializationInfoDataSize, config.specializationInfoData);
+    for (auto &me : map_entry_vector) {
+        PRINT("map_entry: constantID %u offset %u size %u", me.constantID, me.offset, me.size);
+    }
+
+    CHECK(get_extensions_from_device(tp.get(), device, config.enabledExtensionNames),
+        "Could not get features and extensions names from device");
+    PRINT("Extensions: '%s'", config.enabledExtensionNames);
 
     std::vector<vksp_push_constant> push_constants_vector;
     CHECK(get_push_constants(tp.get(), commandBuffer, max_timestamp, min_timestamp, push_constants_vector),
