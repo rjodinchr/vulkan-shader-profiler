@@ -20,3 +20,8 @@
 extern "C" bool store_shader_in_output(std::string *shader, std::vector<spvtools::vksp_push_constant> *pc,
     std::vector<spvtools::vksp_descriptor_set> *ds, std::vector<spvtools::vksp_specialization_map_entry> *me,
     spvtools::vksp_configuration *config, const char *output_filename, bool binary_output);
+extern "C" bool store_shader_buffer_in_output(std::vector<char> *shader_buffer,
+    std::vector<spvtools::vksp_push_constant> *pc, std::vector<spvtools::vksp_descriptor_set> *ds,
+    std::vector<spvtools::vksp_specialization_map_entry> *me, spvtools::vksp_configuration *config,
+    const char *output_filename, bool binary_output);
+extern "C" bool read_shader_buffer(std::string *gShaderFile, std::vector<char> *shader_buffer);

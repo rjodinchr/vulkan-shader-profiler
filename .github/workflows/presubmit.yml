@@ -91,23 +91,18 @@ jobs:
             -DBACKEND=System \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build_release
-      - name: Tests
+      - name: Test runner
+        env:
+          VKSP_RUNNER: ${{ github.workspace }}/build_release/runner/vulkan-shader-profiler-runner
         run: |
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm -v
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example-counter.spvasm | grep "my_section"
-          $(pwd)/third_party/perfetto/out/linux_clang_release/traced &
-          $(pwd)/third_party/perfetto/out/linux_clang_release/perfetto -c $(pwd)/tests/perfetto_config --txt -o $(pwd)/trace &
-          sleep 1
-          VK_LOADER_DEBUG=all \
-          LD_LIBRARY_PATH=$(pwd)/build_release/layer/:$(pwd)/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH \
-          VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER" \
-          VK_ADD_LAYER_PATH=$(pwd)/manifest/ \
-          VKSP_TRACE_DEST=$(pwd)/trace \
-          VKSP_SHADER_TEXT_BLOCK_SIZE=1024 \
-          $(pwd)/build_release/runner/vulkan-shader-profiler-runner -i $(pwd)/tests/example.spvasm
-          sleep 1
-          pkill -x perfetto
-          while [[ -n $(pgrep -x perfetto) ]]; do sleep 0.2; done
-          $(pwd)/build_release/extractor/vulkan-shader-profiler-extractor -i $(pwd)/trace -o $(pwd)/trace.spvasm -d 0 -v
-          cat $(pwd)/tests/example-expectation.spvasm
-          diff $(pwd)/trace.spvasm $(pwd)/tests/example-expectation.spvasm
+          $(pwd)/tests/test-runner.sh
+      - name: Test layer & extractor
+        env:
+          VK_LOADER_DEBUG: all
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build_release/layer/:${{ github.workspace }}/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH
+          VKSP_EXTRACTOR: ${{ github.workspace }}/build_release/extractor/vulkan-shader-profiler-extractor
+          VKSP_RUNNER: ${{ github.workspace }}/build_release/runner/vulkan-shader-profiler-runner
+          PERFETTO_TRACED: ${{ github.workspace }}/third_party/perfetto/out/linux_clang_release/traced
+          PERFETTO_BINARY: ${{ github.workspace }}/third_party/perfetto/out/linux_clang_release/perfetto
+        run: |
+          $(pwd)/tests/test-extractor.sh
