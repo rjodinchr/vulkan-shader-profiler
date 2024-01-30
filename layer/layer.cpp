@@ -18,6 +18,7 @@
 #include "spirv-tools/libspirv.h"
 
 #include <condition_variable>
+#include <filesystem>
 #include <perfetto.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -597,6 +598,26 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     return result;
 }
 
+static void writeShaderOnDisk(const char *dir, std::string shader_name, const uint32_t *code, const size_t code_size)
+{
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "writeShaderOnDisk", "dir", perfetto::DynamicString(dir), "shader",
+        perfetto::DynamicString(shader_name));
+    std::filesystem::path filename(dir);
+    if (!std::filesystem::exists(filename)) {
+        PRINT("'%s' does not exist, could not write shader on disk", dir);
+        return;
+    }
+    filename /= shader_name;
+    filename += ".spv";
+    FILE *file = fopen(filename.c_str(), "w");
+    size_t size_written = 0;
+    const uint8_t *data = (const uint8_t *)code;
+    do {
+        size_written += fwrite(&data[size_written], 1, code_size - size_written, file);
+    } while (size_written != code_size);
+    fclose(file);
+}
+
 VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
     const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule)
 {
@@ -610,8 +631,14 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
     spv_text text;
     spv_diagnostic diag;
     const uint32_t *code = pCreateInfo->pCode;
-    const size_t code_size = pCreateInfo->codeSize / sizeof(uint32_t);
-    spv_result_t spv_result = spvBinaryToText(context, code, code_size,
+    const size_t code_size = pCreateInfo->codeSize;
+    const size_t word_count = code_size / sizeof(uint32_t);
+
+    if (auto dir = getenv("VKSP_SHADER_DIR")) {
+        writeShaderOnDisk(dir, shader_str, code, code_size);
+    }
+
+    spv_result_t spv_result = spvBinaryToText(context, code, word_count,
         SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
         &text, &diag);
     if (spv_result == SPV_SUCCESS) {

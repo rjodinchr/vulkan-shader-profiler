@@ -89,6 +89,7 @@ using namespace spvtools;
 static bool gVerbose = false, gBinary = false;
 static uint64_t gDispatchId = UINT64_MAX;
 static std::string gInput = "", gOutput = "";
+static std::string gShaderFile = "";
 
 void progress_callback(uint64_t size)
 {
@@ -163,8 +164,8 @@ bool get_min_timestamp(TraceProcessor *tp, uint64_t commandBUffer, uint64_t max_
     return true;
 }
 
-bool get_shader_and_device_from_compute(
-    TraceProcessor *tp, uint64_t compute, std::string &shader, uint64_t &device, vksp_configuration &config)
+bool get_shader_and_device_from_compute(TraceProcessor *tp, uint64_t compute, std::string &shader,
+    std::vector<char> &shader_buffer, uint64_t &device, vksp_configuration &config)
 {
     GET_STR_VALUE(tp, compute, "debug.shader", config.shaderName);
 
@@ -176,6 +177,16 @@ bool get_shader_and_device_from_compute(
     assert(!it.Next());
 
     GET_INT_VALUE(tp, shader_device_arg_set_id, "debug.device", device);
+
+    if (gShaderFile != "") {
+        if (read_shader_buffer(&gShaderFile, &shader_buffer)) {
+            return true;
+        } else {
+            ERROR("'%s' does not exist, get shader code from perfetto file", gShaderFile.c_str());
+            // reset gShaderFile to make sure the extractor is using the string, not the buffer;
+            gShaderFile = "";
+        }
+    }
 
     std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-text' AND '"
         + std::string(config.shaderName)
@@ -532,6 +543,7 @@ void help()
            "OPTIONS:\n"
            "\t-b\tOutput in binary instead of text\n"
            "\t-h\tDisplay this help and exit\n"
+           "\t-s\tFile to use instead of perfetto to get shader code\n"
            "\t-v\tVerbose mode\n");
 }
 
@@ -539,7 +551,7 @@ bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "hbvd:i:o:")) != -1) {
+    while ((c = getopt(argc, argv, "hbvd:i:o:s:")) != -1) {
         switch (c) {
         case 'd':
             gDispatchId = atoi(optarg);
@@ -552,6 +564,9 @@ bool parse_args(int argc, char **argv)
             break;
         case 'b':
             gBinary = true;
+            break;
+        case 's':
+            gShaderFile = std::string(optarg);
             break;
         case 'v':
             gVerbose = true;
@@ -596,10 +611,15 @@ int main(int argc, char **argv)
 
     std::string shader;
     uint64_t device;
-    CHECK(get_shader_and_device_from_compute(tp.get(), compute, shader, device, config),
+    std::vector<char> shader_buffer;
+    CHECK(get_shader_and_device_from_compute(tp.get(), compute, shader, shader_buffer, device, config),
         "Could not get shader from compute");
     PRINT("Device: %lu", device);
-    PRINT("Shader from compute (name: '%s'):\n%s", config.shaderName, shader.c_str());
+    if (gShaderFile == "") {
+        PRINT("Shader from compute (name: '%s'):\n%s", config.shaderName, shader.c_str());
+    } else {
+        PRINT("Shader from file '%s' (name: '%s')\n", gShaderFile.c_str(), config.shaderName);
+    }
 
     uint64_t max_timestamp;
     CHECK(get_max_timestamp(tp.get(), dispatch, max_timestamp), "Could not get max_timestamp");
@@ -673,9 +693,15 @@ int main(int argc, char **argv)
         }
     }
 
-    CHECK(store_shader_in_output(&shader, &push_constants_vector, &descriptor_sets_vector, &map_entry_vector, &config,
-              gOutput.c_str(), gBinary),
-        "Could not store shader in output file");
+    if (gShaderFile == "") {
+        CHECK(store_shader_in_output(&shader, &push_constants_vector, &descriptor_sets_vector, &map_entry_vector,
+                  &config, gOutput.c_str(), gBinary),
+            "Could not store shader in output file");
+    } else {
+        CHECK(store_shader_buffer_in_output(&shader_buffer, &push_constants_vector, &descriptor_sets_vector,
+                  &map_entry_vector, &config, gOutput.c_str(), gBinary),
+            "Could not store shader buffer in output file");
+    }
 
     return 0;
 }

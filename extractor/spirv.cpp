@@ -18,29 +18,32 @@
 #include "spirv.hpp"
 #include "utils.hpp"
 
-bool create_binary(spv_context context, std::string *shader, std::vector<spvtools::vksp_push_constant> *pc,
-    std::vector<spvtools::vksp_descriptor_set> *ds, std::vector<spvtools::vksp_specialization_map_entry> *me,
-    spvtools::vksp_configuration *config, std::vector<uint32_t> &binary)
+#include <filesystem>
+
+bool text_to_binary(spv_context context, std::string *shader, spv_binary &binary)
 {
     spv_diagnostic diagnostic;
-    spv_binary tmp_binary;
-    auto status = spvTextToBinary(context, shader->data(), shader->size(), &tmp_binary, &diagnostic);
+    auto status = spvTextToBinary(context, shader->data(), shader->size(), &binary, &diagnostic);
     if (status != SPV_SUCCESS) {
         ERROR("Error while converting shader from text to binary: %s", diagnostic->error);
         spvDiagnosticDestroy(diagnostic);
         return false;
     }
+    return true;
+}
 
+bool create_binary(spv_context context, spv_binary input_binary, std::vector<spvtools::vksp_push_constant> *pc,
+    std::vector<spvtools::vksp_descriptor_set> *ds, std::vector<spvtools::vksp_specialization_map_entry> *me,
+    spvtools::vksp_configuration *config, std::vector<uint32_t> &output_binary)
+{
     spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
     opt.RegisterPass(spvtools::CreateInsertVkspReflectInfoPass(pc, ds, me, config));
     spvtools::OptimizerOptions options;
     options.set_run_validator(false);
-    if (!opt.Run(tmp_binary->code, tmp_binary->wordCount, &binary, options)) {
+    if (!opt.Run(input_binary->code, input_binary->wordCount, &output_binary, options)) {
         ERROR("Error while running 'CreateVkspReflectInfoPass'");
         return false;
     }
-
-    spvBinaryDestroy(tmp_binary);
     return true;
 }
 
@@ -60,13 +63,13 @@ bool binary_to_text(spv_context context, std::vector<uint32_t> &binary, spv_text
     return true;
 }
 
-extern "C" bool store_shader_in_output(std::string *shader, std::vector<spvtools::vksp_push_constant> *pc,
-    std::vector<spvtools::vksp_descriptor_set> *ds, std::vector<spvtools::vksp_specialization_map_entry> *me,
-    spvtools::vksp_configuration *config, const char *output_filename, bool binary_output)
+bool store_shader_binary_in_output(spv_context context, spv_binary input_binary,
+    std::vector<spvtools::vksp_push_constant> *pc, std::vector<spvtools::vksp_descriptor_set> *ds,
+    std::vector<spvtools::vksp_specialization_map_entry> *me, spvtools::vksp_configuration *config,
+    const char *output_filename, bool binary_output)
 {
-    spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
     std::vector<uint32_t> binary;
-    if (!create_binary(context, shader, pc, ds, me, config, binary)) {
+    if (!create_binary(context, input_binary, pc, ds, me, config, binary)) {
         ERROR("Could not create SPIR-V binary from trace");
         return false;
     }
@@ -87,5 +90,52 @@ extern "C" bool store_shader_in_output(std::string *shader, std::vector<spvtools
     fclose(output);
 
     spvContextDestroy(context);
+    return true;
+}
+
+extern "C" bool store_shader_in_output(std::string *shader, std::vector<spvtools::vksp_push_constant> *pc,
+    std::vector<spvtools::vksp_descriptor_set> *ds, std::vector<spvtools::vksp_specialization_map_entry> *me,
+    spvtools::vksp_configuration *config, const char *output_filename, bool binary_output)
+{
+    spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
+    spv_binary binary;
+    if (!text_to_binary(context, shader, binary)) {
+        ERROR("Could not convert shader to binary");
+        return false;
+    }
+
+    auto ret = store_shader_binary_in_output(context, binary, pc, ds, me, config, output_filename, binary_output);
+
+    spvBinaryDestroy(binary);
+    return ret;
+}
+
+extern "C" bool store_shader_buffer_in_output(std::vector<char> *shader_buffer,
+    std::vector<spvtools::vksp_push_constant> *pc, std::vector<spvtools::vksp_descriptor_set> *ds,
+    std::vector<spvtools::vksp_specialization_map_entry> *me, spvtools::vksp_configuration *config,
+    const char *output_filename, bool binary_output)
+{
+    spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
+    spv_binary_t binary
+        = { .code = (uint32_t *)shader_buffer->data(), .wordCount = shader_buffer->size() / sizeof(uint32_t) };
+
+    return store_shader_binary_in_output(context, &binary, pc, ds, me, config, output_filename, binary_output);
+}
+
+extern "C" bool read_shader_buffer(std::string *gShaderFile, std::vector<char> *shader_buffer)
+{
+    if (!std::filesystem::exists(*gShaderFile)) {
+        return false;
+    }
+    FILE *file = fopen(gShaderFile->c_str(), "r");
+    fseek(file, 0, SEEK_END);
+    size_t file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    shader_buffer->resize(file_size);
+    size_t size_read = 0;
+    do {
+        size_read += fread(&(shader_buffer->data()[size_read]), 1, file_size - size_read, file);
+    } while (size_read != file_size);
+    fclose(file);
     return true;
 }

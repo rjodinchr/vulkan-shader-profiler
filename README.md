@@ -22,6 +22,8 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 - [Extracting a dispatch from a trace](#Extracting-a-dispatch-from-a-trace)
 - [Run a Vulkan SPIR-V program with the runner](#Run-a-Vulkan-SPIR-V-program-with-the-runner)
   - [Using counters inside a Vulkan SPIR-V program](#Using-counters-inside-a-Vulkan-SPIR-V-program)
+- [Known issues](#Known-issues)
+  - [Large shader code](#Large-shader-code)
 
 # Dependencies
 
@@ -136,6 +138,7 @@ Required options:
 Optional options:
 
 * `-b`: output a binary Vulkan SPIRV-V program instead of a readable one (allow to have something smaller).
+* `-s`: the path to the file to use instead of the perfetto trace to get the shader code (see section [Large shader code](#Large-shader-code) for more information).
 * `-v`: enable the verbose mode which is mainly use for debug purpose.
 
 # Run a Vulkan SPIR-V program with the runner
@@ -212,3 +215,24 @@ vksp_s0-test_simple-128.1.1
 -------------------------------
 [SHADER] my_section:  29.8%
 ```
+
+# Known issues
+
+## Large shader code
+
+When tracing applications using large shader code, perfetto can have issue creating the slice.
+It causes the shader code to be missing or to be partially present in the perfetto trace.
+Thus preventing to find the full code in the web ui or to use the `vulkan-shader-profiler-extractor`.
+
+To avoid this issue, it is possible to run the application with the following environment variable set:
+
+```
+VKSP_SHADER_DIR=<path-use-to-store-the-shaders>
+```
+
+It will force the `vulkan-shader-profiler` layer to dump the shaders in their binary format in this directory (make sure the directory exists, it will not be created by the `vulkan-shader-profiler` layer).
+
+Then once can either use:
+
+- `spirv-dis` to disassemble the interesting shaders to a readable format
+- `vulkan-shader-profiler-extractor` with the `-s` option to specify the shader file to use instead of what is inside the perfetto trace.
