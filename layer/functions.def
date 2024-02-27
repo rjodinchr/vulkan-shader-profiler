@@ -16,6 +16,7 @@ FUNC_INS(GetInstanceProcAddr)
 FUNC_INS(CreateInstance)
 FUNC_INS(DestroyInstance)
 FUNC_INS(CreateDevice)
+FUNC_INS(EnumeratePhysicalDevices)
 FUNC_DEV(DestroyDevice)
 FUNC_DEV(GetDeviceProcAddr)
 
