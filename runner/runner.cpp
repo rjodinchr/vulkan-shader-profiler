@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <assert.h>
 #include <spirv-tools/libspirv.h>
 #include <spirv-tools/optimizer.hpp>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 #include <vulkan/vulkan.h>
 
+#include "spirv.hpp"
+
 #include <algorithm>
+#include <assert.h>
 #include <chrono>
 #include <map>
 #include <set>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 
 #define PRINT_IMPL(file, message, ...)                                                                                 \
     do {                                                                                                               \
@@ -184,9 +185,9 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     return 0;
 }
 
-static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtools::vksp_descriptor_set> &ds,
-    std::vector<spvtools::vksp_push_constant> &pc, std::vector<spvtools::vksp_specialization_map_entry> &me,
-    std::vector<spvtools::vksp_counter> &counters, spvtools::vksp_configuration &config)
+static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<vksp::vksp_descriptor_set> &ds,
+    std::vector<vksp::vksp_push_constant> &pc, std::vector<vksp::vksp_specialization_map_entry> &me,
+    std::vector<vksp::vksp_counter> &counters, vksp::vksp_configuration &config)
 {
     FILE *input = fopen(gInput.c_str(), "r");
     fseek(input, 0, SEEK_END);
@@ -218,7 +219,8 @@ static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtoo
     }
 
     spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
-    opt.RegisterPass(spvtools::CreateExtractVkspReflectInfoPass(&pc, &ds, &me, &counters, &config));
+    opt.RegisterPass(spvtools::Optimizer::PassToken(
+        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config)));
     opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
     spvtools::OptimizerOptions options;
     options.set_run_validator(false);
@@ -248,8 +250,8 @@ static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<spvtoo
     return true;
 }
 
-static uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, VkDevice device,
-    VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
+static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
     VkResult res;
 
@@ -320,8 +322,8 @@ static uint32_t handle_descriptor_set_buffer(spvtools::vksp_descriptor_set &ds, 
     return 0;
 }
 
-static uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, VkDevice device,
-    VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
+static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
     VkResult res;
 
@@ -381,8 +383,8 @@ static uint32_t handle_descriptor_set_image(spvtools::vksp_descriptor_set &ds, V
     return 0;
 }
 
-static uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds, VkDevice device,
-    VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
+static uint32_t handle_descriptor_set_sampler(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
     VkResult res;
     VkSampler sampler;
@@ -415,7 +417,7 @@ static uint32_t handle_descriptor_set_sampler(spvtools::vksp_descriptor_set &ds,
 }
 
 static uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescriptorSet> &descSet,
-    std::vector<spvtools::vksp_descriptor_set> &dsVector, std::vector<VkDescriptorSetLayout> &descSetLayoutVector)
+    std::vector<vksp::vksp_descriptor_set> &dsVector, std::vector<VkDescriptorSetLayout> &descSetLayoutVector)
 {
     VkResult res;
     std::map<VkDescriptorType, uint32_t> descTypeCount;
@@ -468,7 +470,7 @@ static uint32_t allocate_descriptor_set(VkDevice device, std::vector<VkDescripto
     return 0;
 }
 
-static uint32_t count_descriptor_set(std::vector<spvtools::vksp_descriptor_set> dsVector)
+static uint32_t count_descriptor_set(std::vector<vksp::vksp_descriptor_set> dsVector)
 {
     std::set<uint32_t> ds_set;
     for (auto &ds : dsVector) {
@@ -477,7 +479,7 @@ static uint32_t count_descriptor_set(std::vector<spvtools::vksp_descriptor_set> 
     return ds_set.size();
 }
 
-static uint32_t handle_push_constant(std::vector<spvtools::vksp_push_constant> &pcVector, VkPushConstantRange &range,
+static uint32_t handle_push_constant(std::vector<vksp::vksp_push_constant> &pcVector, VkPushConstantRange &range,
     VkCommandBuffer cmdBuffer, VkPipelineLayout pipelineLayout)
 {
     std::vector<uint8_t> pValues(range.size);
@@ -500,7 +502,7 @@ static uint32_t handle_push_constant(std::vector<spvtools::vksp_push_constant> &
     return 0;
 }
 
-static uint32_t allocate_pipeline_layout(VkDevice device, std::vector<spvtools::vksp_push_constant> &pcVector,
+static uint32_t allocate_pipeline_layout(VkDevice device, std::vector<vksp::vksp_push_constant> &pcVector,
     std::vector<VkPushConstantRange> &pcRanges, std::vector<VkDescriptorSetLayout> &descSetLayoutVector,
     VkPipelineLayout &pipelineLayout)
 {
@@ -516,8 +518,8 @@ static uint32_t allocate_pipeline_layout(VkDevice device, std::vector<spvtools::
 }
 
 static uint32_t allocate_pipeline(std::vector<uint32_t> &shader, VkPipelineLayout pipelineLayout, VkDevice device,
-    VkCommandBuffer cmdBuffer, std::vector<spvtools::vksp_specialization_map_entry> &meVector,
-    spvtools::vksp_configuration &config, VkPipeline &pipeline)
+    VkCommandBuffer cmdBuffer, std::vector<vksp::vksp_specialization_map_entry> &meVector,
+    vksp::vksp_configuration &config, VkPipeline &pipeline)
 {
     VkResult res;
     const VkShaderModuleCreateInfo shaderModuleCreateInfo
@@ -605,13 +607,13 @@ static void print_time(uint64_t time, const char *prefix, uint32_t prefix_max_si
     }
 }
 
-static uint32_t counters_size(std::vector<spvtools::vksp_counter> &counters)
+static uint32_t counters_size(std::vector<vksp::vksp_counter> &counters)
 {
     return sizeof(uint64_t) * (2 + counters.size());
 }
 
-static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue, spvtools::vksp_configuration &config,
-    std::vector<spvtools::vksp_counter> &counters, uint64_t *gpu_timestamps,
+static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue, vksp::vksp_configuration &config,
+    std::vector<vksp::vksp_counter> &counters, uint64_t *gpu_timestamps,
     std::chrono::steady_clock::time_point *host_timestamps)
 {
     VkResult res;
@@ -670,8 +672,8 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
     return 0;
 }
 
-static uint32_t print_results(VkPhysicalDevice pDevice, VkDevice device, spvtools::vksp_configuration &config,
-    std::vector<spvtools::vksp_counter> &counters, uint64_t *gpu_timestamps,
+static uint32_t print_results(VkPhysicalDevice pDevice, VkDevice device, vksp::vksp_configuration &config,
+    std::vector<vksp::vksp_counter> &counters, uint64_t *gpu_timestamps,
     std::chrono::steady_clock::time_point *host_timestamps)
 {
     VkPhysicalDeviceProperties properties;
@@ -862,11 +864,11 @@ int main(int argc, char **argv)
         gVerbose, spvTargetEnvDescription(gSpvTargetEnv), gHotRun, gColdRun);
 
     std::vector<uint32_t> shader;
-    std::vector<spvtools::vksp_descriptor_set> dsVector;
-    std::vector<spvtools::vksp_push_constant> pcVector;
-    std::vector<spvtools::vksp_specialization_map_entry> meVector;
-    std::vector<spvtools::vksp_counter> counters;
-    spvtools::vksp_configuration config;
+    std::vector<vksp::vksp_descriptor_set> dsVector;
+    std::vector<vksp::vksp_push_constant> pcVector;
+    std::vector<vksp::vksp_specialization_map_entry> meVector;
+    std::vector<vksp::vksp_counter> counters;
+    vksp::vksp_configuration config;
     CHECK(extract_from_input(shader, dsVector, pcVector, meVector, counters, config),
         "Could not extract data from input");
     PRINT("Shader name: '%s'", config.shaderName);
@@ -940,7 +942,7 @@ int main(int argc, char **argv)
         }
     }
     std::vector<VkPushConstantRange> pcRanges;
-    std::map<uint32_t, std::vector<spvtools::vksp_push_constant>> pcMap;
+    std::map<uint32_t, std::vector<vksp::vksp_push_constant>> pcMap;
     for (auto &pc : pcVector) {
         PRINT("push_constants: offset %u size %u stageFlags %u pValues %s", pc.offset, pc.size, pc.stageFlags,
             pc.pValues);

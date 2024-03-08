@@ -71,6 +71,9 @@ jobs:
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
             -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
             -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
+            -DSPIRV_HEADERS_INCLUDE_PATH="$(pwd)/third_party/spirv-tools/external/spirv-headers/include" \
+            -DSPIRV_TOOLS_BUILD_PATH="$(pwd)/third_party/spirv-tools/build" \
+            -DSPIRV_TOOLS_SOURCE_PATH="$(pwd)/third_party/spirv-tools" \
             -DEXTRACTOR_NOSTDINCXX=1 \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
@@ -85,6 +88,9 @@ jobs:
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
             -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
             -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
+            -DSPIRV_HEADERS_INCLUDE_PATH="$(pwd)/third_party/spirv-tools/external/spirv-headers/include" \
+            -DSPIRV_TOOLS_BUILD_PATH="$(pwd)/third_party/spirv-tools/build" \
+            -DSPIRV_TOOLS_SOURCE_PATH="$(pwd)/third_party/spirv-tools" \
             -DEXTRACTOR_NOSTDINCXX=1 \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \

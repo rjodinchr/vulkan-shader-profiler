@@ -121,7 +121,7 @@ std::unique_ptr<TraceProcessor> initialize_database()
 }
 
 bool get_dispatch_compute_and_commandBuffer_from_dispatchId(TraceProcessor *tp, uint64_t dispatchId, uint64_t &dispatch,
-    uint64_t &compute, uint64_t &commandBuffer, vksp_configuration &config)
+    uint64_t &compute, uint64_t &commandBuffer, vksp::vksp_configuration &config)
 {
     std::string query = "SELECT arg_set_id FROM args WHERE args.key = 'debug.dispatchId' AND args.int_value = "
         + std::to_string(dispatchId);
@@ -165,7 +165,7 @@ bool get_min_timestamp(TraceProcessor *tp, uint64_t commandBUffer, uint64_t max_
 }
 
 bool get_shader_and_device_from_compute(TraceProcessor *tp, uint64_t compute, std::string &shader,
-    std::vector<char> &shader_buffer, uint64_t &device, vksp_configuration &config)
+    std::vector<char> &shader_buffer, uint64_t &device, vksp::vksp_configuration &config)
 {
     GET_STR_VALUE(tp, compute, "debug.shader", config.shaderName);
 
@@ -222,7 +222,7 @@ bool get_extensions_from_device(TraceProcessor *tp, uint64_t device, const char 
 }
 
 bool get_push_constants(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max_timestamp, uint64_t min_timestamp,
-    std::vector<vksp_push_constant> &push_constants_vector)
+    std::vector<vksp::vksp_push_constant> &push_constants_vector)
 {
     std::string query = "SELECT arg_set_id, ts FROM slice WHERE slice.name = 'vkCmdPushConstants' AND slice.ts > "
         + std::to_string(min_timestamp) + " AND slice.ts < " + std::to_string(max_timestamp) + " AND "
@@ -234,7 +234,7 @@ bool get_push_constants(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
     std::set<uint32_t> offsetWritten;
     while (it.Next()) {
         uint64_t arg_set_id = it.Get(0).AsLong();
-        vksp_push_constant pc;
+        vksp::vksp_push_constant pc;
         GET_INT_VALUE(tp, arg_set_id, "debug.offset", pc.offset);
         GET_INT_VALUE(tp, arg_set_id, "debug.size", pc.size);
         GET_INT_VALUE(tp, arg_set_id, "debug.stageFlags", pc.stageFlags);
@@ -256,7 +256,7 @@ bool get_push_constants(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
 }
 
 bool get_buffer_descriptor_set(
-    TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp_descriptor_set &ds)
+    TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp::vksp_descriptor_set &ds)
 {
     uint64_t buffer;
     GET_INT_VALUE(tp, write_arg_set_id, "debug.buffer", buffer);
@@ -304,7 +304,7 @@ bool get_buffer_descriptor_set(
 }
 
 bool get_image_descriptor_set(
-    TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp_descriptor_set &ds)
+    TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp::vksp_descriptor_set &ds)
 {
     uint64_t image_view;
     GET_INT_VALUE(tp, write_arg_set_id, "debug.imageView", image_view);
@@ -384,7 +384,7 @@ bool get_image_descriptor_set(
 }
 
 bool get_sampler_descriptor_set(
-    TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp_descriptor_set &ds)
+    TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp::vksp_descriptor_set &ds)
 {
     uint64_t sampler;
     GET_INT_VALUE(tp, write_arg_set_id, "debug.sampler", sampler);
@@ -418,7 +418,7 @@ bool get_sampler_descriptor_set(
 }
 
 bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max_timestamp, uint64_t min_timestamp,
-    std::vector<vksp_descriptor_set> &descriptor_sets_vector)
+    std::vector<vksp::vksp_descriptor_set> &descriptor_sets_vector)
 {
     std::map<uint32_t, std::set<uint32_t>> dsSeen;
     std::string query
@@ -432,7 +432,7 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
     do {
         uint64_t arg_set_id = it.Get(0).AsLong();
         uint64_t bind_timestamp = it.Get(1).AsLong();
-        vksp_descriptor_set ds;
+        vksp::vksp_descriptor_set ds;
 
         uint64_t dstSet;
         {
@@ -493,7 +493,8 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
 }
 
 bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max_timestamp,
-    uint64_t min_timestamp, std::vector<vksp_specialization_map_entry> &map_entry_vector, vksp_configuration &config)
+    uint64_t min_timestamp, std::vector<vksp::vksp_specialization_map_entry> &map_entry_vector,
+    vksp::vksp_configuration &config)
 {
     std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCmdBindPipeline' AND "
         + std::to_string(commandBuffer)
@@ -513,7 +514,7 @@ bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer,
     EXECUTE_QUERY_NO_CHECK(it2, tp, query2);
     while (it2.Next()) {
         uint64_t arg_set_id = it2.Get(0).AsLong();
-        vksp_specialization_map_entry me;
+        vksp::vksp_specialization_map_entry me;
         GET_INT_VALUE(tp, arg_set_id, "debug.constantID", me.constantID);
         GET_INT_VALUE(tp, arg_set_id, "debug.offset", me.offset);
         GET_INT_VALUE(tp, arg_set_id, "debug.size", me.size);
@@ -604,7 +605,7 @@ int main(int argc, char **argv)
     CHECK(tp != nullptr, "Initialization failed");
     PRINT("%s read with success", gInput.c_str());
 
-    vksp_configuration config;
+    vksp::vksp_configuration config;
     uint64_t dispatch, compute, commandBuffer;
     CHECK(get_dispatch_compute_and_commandBuffer_from_dispatchId(
               tp.get(), gDispatchId, dispatch, compute, commandBuffer, config),
@@ -633,7 +634,7 @@ int main(int argc, char **argv)
     CHECK(get_min_timestamp(tp.get(), commandBuffer, max_timestamp, min_timestamp), "Could not get min_timestamp");
     PRINT("Min timestamp: %lu", min_timestamp);
 
-    std::vector<vksp_specialization_map_entry> map_entry_vector;
+    std::vector<vksp::vksp_specialization_map_entry> map_entry_vector;
     CHECK(get_map_entries_from_cmd_buffer(
               tp.get(), commandBuffer, max_timestamp, min_timestamp, map_entry_vector, config),
         "Could not get map entries from command buffer");
@@ -646,7 +647,7 @@ int main(int argc, char **argv)
         "Could not get features and extensions names from device");
     PRINT("Extensions: '%s'", config.enabledExtensionNames);
 
-    std::vector<vksp_push_constant> push_constants_vector;
+    std::vector<vksp::vksp_push_constant> push_constants_vector;
     CHECK(get_push_constants(tp.get(), commandBuffer, max_timestamp, min_timestamp, push_constants_vector),
         "Could not get push_constants");
     for (auto &pc : push_constants_vector) {
@@ -654,7 +655,7 @@ int main(int argc, char **argv)
             pc.pValues);
     }
 
-    std::vector<vksp_descriptor_set> descriptor_sets_vector;
+    std::vector<vksp::vksp_descriptor_set> descriptor_sets_vector;
     CHECK(get_descriptor_set(tp.get(), commandBuffer, max_timestamp, min_timestamp, descriptor_sets_vector),
         "Could not get descriptor_set");
     for (auto &ds : descriptor_sets_vector) {
