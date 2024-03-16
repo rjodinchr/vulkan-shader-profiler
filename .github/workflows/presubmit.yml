@@ -36,8 +36,8 @@ jobs:
           sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers
       - name: Build SPIRV-Tools
         run: |
-          git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
-          git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
+          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
+          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
@@ -45,7 +45,7 @@ jobs:
           cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
       - name: Build Perfetto
         run: |
-          git clone --depth 1 --branch v39.0 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
+          git clone --depth 1 --branch v43.2 https://android.googlesource.com/platform/external/perfetto third_party/perfetto
           $(pwd)/third_party/perfetto/tools/install-build-deps
           $(pwd)/third_party/perfetto/tools/setup_all_configs.py
           $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a perfetto traced
@@ -54,7 +54,7 @@ jobs:
           sudo apt-get install build-essential libx11-xcb-dev libxkbcommon-dev libwayland-dev libxrandr-dev
       - name: Build Vulkan-Loader
         run : |
-          git clone --depth 1 --branch v1.3.240 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
+          git clone --depth 1 --branch v1.3.280 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
           cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
             -DVulkanHeaders_DIR=$(pwd)/install/share/cmake/VulkanHeaders \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
