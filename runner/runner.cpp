@@ -59,9 +59,11 @@ static std::map<char, uint8_t> charToByte
 static bool gVerbose = false;
 static std::string gInput = "";
 static uint32_t gColdRun = 0, gHotRun = 1;
-static VkBuffer gCounterBuffer;
+static VkBuffer gCounterBuffer = VK_NULL_HANDLE;
 static VkDeviceMemory gCounterMemory;
 static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
+static bool gDisableCounters = false;
+static uint32_t gPriority = UINT32_MAX;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
@@ -129,13 +131,30 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
         if (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
             queueFamilyIndex = i;
             nbQueues = families[i].queueCount;
-            break;
+            if (!(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                break;
+            }
         }
     }
     CHECK(queueFamilyIndex != UINT32_MAX, "Could not find a VK_QUEUE_COMPUTE_BIT queue");
 
+    void *globalPriority = nullptr;
+
+    VkDeviceQueueGlobalPriorityCreateInfoKHR globalPriorityCreateInfo;
+    const uint32_t nb_priorities = 4;
+    VkQueueGlobalPriorityKHR priorities[nb_priorities] = { VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR,
+        VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR, VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR, VK_QUEUE_GLOBAL_PRIORITY_REALTIME_KHR };
+    if (gPriority != UINT32_MAX) {
+        gPriority = std::min(gPriority, nb_priorities - 1);
+
+        globalPriorityCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR;
+        globalPriorityCreateInfo.pNext = nullptr;
+        globalPriorityCreateInfo.globalPriority = priorities[gPriority];
+        globalPriority = &globalPriorityCreateInfo;
+    }
+
     std::vector<float> queuePriorities(nbQueues, 1.0f);
-    VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, nullptr, 0,
+    VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, globalPriority, 0,
         queueFamilyIndex, nbQueues, queuePriorities.data() };
 
     std::vector<const char *> extensions;
@@ -220,7 +239,7 @@ static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<vksp::
 
     spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
     opt.RegisterPass(spvtools::Optimizer::PassToken(
-        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config)));
+        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config, gDisableCounters)));
     opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
     spvtools::OptimizerOptions options;
     options.set_run_validator(false);
@@ -281,7 +300,7 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
             }
         }
         CHECK(memoryTypeFound, "Could not find a memoryType for counter");
-        CHECK(ds.buffer.memorySize == memreqs.size, "memorySize for counter buffer does not match");
+        CHECK(ds.buffer.memorySize <= memreqs.size, "memorySize for counter buffer does not match");
     }
 
     const VkMemoryAllocateInfo pAllocateInfo = {
@@ -637,10 +656,12 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
         vkCmdDispatch(cmdBuffer, config.groupCountX, config.groupCountY, config.groupCountZ);
     }
 
-    auto countersSize = counters_size(counters);
-    auto zero = malloc(countersSize);
-    memset(zero, 0, countersSize);
-    vkCmdUpdateBuffer(cmdBuffer, gCounterBuffer, 0, countersSize, zero);
+    if (gCounterBuffer != VK_NULL_HANDLE) {
+        auto countersSize = counters_size(counters);
+        auto zero = malloc(countersSize);
+        memset(zero, 0, countersSize);
+        vkCmdUpdateBuffer(cmdBuffer, gCounterBuffer, 0, countersSize, zero);
+    }
 
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 1);
     for (unsigned i = 0; i < gHotRun; i++) {
@@ -804,10 +825,12 @@ static void help()
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
            "\n"
            "OPTIONS:\n"
+           "\t-c\tDisable counters\n"
            "\t-e\tspv_target_env to use (default: vulkan1.3)\n"
            "\t-h\tDisplay this help and exit\n"
            "\t-m\tNumber of cold run\n"
            "\t-n\tNumber of hot run\n"
+           "\t-p\tGlobal priority (0:low 1:medium 2:high 3:realtime default:unspecified)\n"
            "\t-v\tVerbose mode\n");
 }
 
@@ -815,8 +838,11 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "hvi:n:m:e:")) != -1) {
+    while ((c = getopt(argc, argv, "chvi:n:m:e:p:")) != -1) {
         switch (c) {
+        case 'c':
+            gDisableCounters = true;
+            break;
         case 'e': {
             spv_target_env env;
             if (spvParseTargetEnv(optarg, &env)) {
@@ -831,6 +857,9 @@ static bool parse_args(int argc, char **argv)
             break;
         case 'm':
             gColdRun = atoi(optarg);
+            break;
+        case 'p':
+            gPriority = atoi(optarg);
             break;
         case 'i':
             gInput = std::string(optarg);
