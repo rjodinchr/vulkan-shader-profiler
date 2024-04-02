@@ -131,7 +131,9 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
         if (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
             queueFamilyIndex = i;
             nbQueues = families[i].queueCount;
-            break;
+            if (!(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                break;
+            }
         }
     }
     CHECK(queueFamilyIndex != UINT32_MAX, "Could not find a VK_QUEUE_COMPUTE_BIT queue");
