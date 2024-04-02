@@ -59,9 +59,10 @@ static std::map<char, uint8_t> charToByte
 static bool gVerbose = false;
 static std::string gInput = "";
 static uint32_t gColdRun = 0, gHotRun = 1;
-static VkBuffer gCounterBuffer;
+static VkBuffer gCounterBuffer = VK_NULL_HANDLE;
 static VkDeviceMemory gCounterMemory;
 static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
+static bool gDisableCounters = false;
 static uint32_t gPriority = UINT32_MAX;
 
 static const uint32_t gNbGpuTimestamps = 3;
@@ -236,7 +237,7 @@ static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<vksp::
 
     spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
     opt.RegisterPass(spvtools::Optimizer::PassToken(
-        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config)));
+        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config, gDisableCounters)));
     opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
     spvtools::OptimizerOptions options;
     options.set_run_validator(false);
@@ -653,10 +654,12 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
         vkCmdDispatch(cmdBuffer, config.groupCountX, config.groupCountY, config.groupCountZ);
     }
 
-    auto countersSize = counters_size(counters);
-    auto zero = malloc(countersSize);
-    memset(zero, 0, countersSize);
-    vkCmdUpdateBuffer(cmdBuffer, gCounterBuffer, 0, countersSize, zero);
+    if (gCounterBuffer != VK_NULL_HANDLE) {
+        auto countersSize = counters_size(counters);
+        auto zero = malloc(countersSize);
+        memset(zero, 0, countersSize);
+        vkCmdUpdateBuffer(cmdBuffer, gCounterBuffer, 0, countersSize, zero);
+    }
 
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 1);
     for (unsigned i = 0; i < gHotRun; i++) {
@@ -820,6 +823,7 @@ static void help()
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
            "\n"
            "OPTIONS:\n"
+           "\t-c\tDisable counters\n"
            "\t-e\tspv_target_env to use (default: vulkan1.3)\n"
            "\t-h\tDisplay this help and exit\n"
            "\t-m\tNumber of cold run\n"
@@ -832,8 +836,11 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "hvi:n:m:e:p:")) != -1) {
+    while ((c = getopt(argc, argv, "chvi:n:m:e:p:")) != -1) {
         switch (c) {
+        case 'c':
+            gDisableCounters = true;
+            break;
         case 'e': {
             spv_target_env env;
             if (spvParseTargetEnv(optarg, &env)) {

@@ -25,12 +25,14 @@ namespace vksp {
 class ExtractVkspReflectInfoPass : public spvtools::opt::Pass {
 public:
     ExtractVkspReflectInfoPass(std::vector<vksp_push_constant> *pc, std::vector<vksp_descriptor_set> *ds,
-        std::vector<vksp_specialization_map_entry> *me, std::vector<vksp_counter> *counters, vksp_configuration *config)
+        std::vector<vksp_specialization_map_entry> *me, std::vector<vksp_counter> *counters, vksp_configuration *config,
+        bool disableCounters)
         : pc_(pc)
         , ds_(ds)
         , me_(me)
         , counters_(counters)
         , config_(config)
+        , disableCounters_(disableCounters)
     {
     }
     const char *name() const override { return "extract-vksp-reflect-info"; }
@@ -49,6 +51,10 @@ public:
             ParseInstruction(inst, ext_inst_id, id_to_descriptor_set, id_to_binding, descriptor_set_0_max_binding,
                 start_counters, stop_counters);
         });
+
+        if (disableCounters_) {
+            return Status::SuccessWithoutChange;
+        }
 
         context()->AddExtension("SPV_KHR_shader_clock");
         context()->AddExtension("SPV_KHR_storage_buffer_storage_class");
@@ -541,6 +547,7 @@ private:
     std::vector<vksp_specialization_map_entry> *me_;
     std::vector<vksp_counter> *counters_;
     vksp_configuration *config_;
+    bool disableCounters_;
 };
 
 }
