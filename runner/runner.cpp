@@ -62,6 +62,7 @@ static uint32_t gColdRun = 0, gHotRun = 1;
 static VkBuffer gCounterBuffer;
 static VkDeviceMemory gCounterMemory;
 static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
+static uint32_t gPriority = UINT32_MAX;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
@@ -134,8 +135,23 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     }
     CHECK(queueFamilyIndex != UINT32_MAX, "Could not find a VK_QUEUE_COMPUTE_BIT queue");
 
+    void *globalPriority = nullptr;
+
+    VkDeviceQueueGlobalPriorityCreateInfoKHR globalPriorityCreateInfo;
+    const uint32_t nb_priorities = 4;
+    VkQueueGlobalPriorityKHR priorities[nb_priorities] = { VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR,
+        VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR, VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR, VK_QUEUE_GLOBAL_PRIORITY_REALTIME_KHR };
+    if (gPriority != UINT32_MAX) {
+        gPriority = std::min(gPriority, nb_priorities - 1);
+
+        globalPriorityCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR;
+        globalPriorityCreateInfo.pNext = nullptr;
+        globalPriorityCreateInfo.globalPriority = priorities[gPriority];
+        globalPriority = &globalPriorityCreateInfo;
+    }
+
     std::vector<float> queuePriorities(nbQueues, 1.0f);
-    VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, nullptr, 0,
+    VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, globalPriority, 0,
         queueFamilyIndex, nbQueues, queuePriorities.data() };
 
     std::vector<const char *> extensions;
@@ -808,6 +824,7 @@ static void help()
            "\t-h\tDisplay this help and exit\n"
            "\t-m\tNumber of cold run\n"
            "\t-n\tNumber of hot run\n"
+           "\t-p\tGlobal priority (0:low 1:medium 2:high 3:realtime default:unspecified)\n"
            "\t-v\tVerbose mode\n");
 }
 
@@ -815,7 +832,7 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "hvi:n:m:e:")) != -1) {
+    while ((c = getopt(argc, argv, "hvi:n:m:e:p:")) != -1) {
         switch (c) {
         case 'e': {
             spv_target_env env;
@@ -831,6 +848,9 @@ static bool parse_args(int argc, char **argv)
             break;
         case 'm':
             gColdRun = atoi(optarg);
+            break;
+        case 'p':
+            gPriority = atoi(optarg);
             break;
         case 'i':
             gInput = std::string(optarg);
