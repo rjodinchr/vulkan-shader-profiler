@@ -281,7 +281,7 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
             }
         }
         CHECK(memoryTypeFound, "Could not find a memoryType for counter");
-        CHECK(ds.buffer.memorySize == memreqs.size, "memorySize for counter buffer does not match");
+        CHECK(ds.buffer.memorySize <= memreqs.size, "memorySize for counter buffer does not match");
     }
 
     const VkMemoryAllocateInfo pAllocateInfo = {
