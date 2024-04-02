@@ -493,8 +493,7 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
 }
 
 bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max_timestamp,
-    uint64_t min_timestamp, std::vector<vksp::vksp_specialization_map_entry> &map_entry_vector,
-    vksp::vksp_configuration &config)
+    std::vector<vksp::vksp_specialization_map_entry> &map_entry_vector, vksp::vksp_configuration &config)
 {
     std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCmdBindPipeline' AND "
         + std::to_string(commandBuffer)
@@ -506,11 +505,24 @@ bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer,
     uint64_t pipeline;
     GET_INT_VALUE(tp, pipeline_arg_set_id, "debug.pipeline", pipeline);
 
+    std::string query_create_compute_pipelines
+        = "SELECT MAX(ts) FROM slice WHERE slice.name = 'vkCreateComputePipelines-specialization' AND "
+        + std::to_string(pipeline)
+        + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pipeline') "
+          "AND slice.ts < "
+        + std::to_string(max_timestamp);
+    EXECUTE_QUERY_NO_CHECK(it_create_compute_pipelines, tp, query_create_compute_pipelines);
+    uint64_t create_compute_pipelines_timestamp = 0;
+    if (it_create_compute_pipelines.Next()) {
+        create_compute_pipelines_timestamp = it_create_compute_pipelines.Get(0).AsLong();
+        assert(!it_create_compute_pipelines.Next());
+    }
+
     std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-MapEntry' AND "
         + std::to_string(pipeline)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pipeline') "
           "AND slice.ts < "
-        + std::to_string(max_timestamp) + " AND slice.ts > " + std::to_string(min_timestamp);
+        + std::to_string(max_timestamp) + " AND slice.ts > " + std::to_string(create_compute_pipelines_timestamp);
     EXECUTE_QUERY_NO_CHECK(it2, tp, query2);
     while (it2.Next()) {
         uint64_t arg_set_id = it2.Get(0).AsLong();
@@ -526,7 +538,7 @@ bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer,
         + std::to_string(pipeline)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pipeline') "
           "AND slice.ts < "
-        + std::to_string(max_timestamp) + " AND slice.ts > " + std::to_string(min_timestamp);
+        + std::to_string(max_timestamp) + " AND slice.ts >= " + std::to_string(create_compute_pipelines_timestamp);
     EXECUTE_QUERY_NO_CHECK(it3, tp, query3);
     if (it3.Next()) {
         uint64_t arg_set_id = it3.Get(0).AsLong();
@@ -635,8 +647,7 @@ int main(int argc, char **argv)
     PRINT("Min timestamp: %lu", min_timestamp);
 
     std::vector<vksp::vksp_specialization_map_entry> map_entry_vector;
-    CHECK(get_map_entries_from_cmd_buffer(
-              tp.get(), commandBuffer, max_timestamp, min_timestamp, map_entry_vector, config),
+    CHECK(get_map_entries_from_cmd_buffer(tp.get(), commandBuffer, max_timestamp, map_entry_vector, config),
         "Could not get map entries from command buffer");
     PRINT("specialization info data (size %u): '%s'", config.specializationInfoDataSize, config.specializationInfoData);
     for (auto &me : map_entry_vector) {
