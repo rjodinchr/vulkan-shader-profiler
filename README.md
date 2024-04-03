@@ -158,9 +158,16 @@ Required options:
 
 Optional options:
 
+* `-c`: disable the counters. Allow to run with no overhead introduced by the counters.
 * `-e`: allow to choose the `spv_target_env` to use when using a non-binary input to convert it to binary (default: `vulkan1.3`)
 * `-n`: allow to run the program multiple times
 * `-m`: allow to run the program multiple times before starting to benchmark it
+* `-p`: allow to force the usage of the vulkan queue global priority:
+  * `0`:`low`
+  * `1`:`medium`
+  * `2`:`high`
+  * `3`:`realtime`
+  * `default`: vulkan queue global priority is not used by the runner
 * `-v`: enable the verbose mode which is mainly use for debug purpose.
 
 Output example:
