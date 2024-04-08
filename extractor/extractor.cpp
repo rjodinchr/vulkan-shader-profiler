@@ -513,7 +513,7 @@ bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer,
         + std::to_string(max_timestamp);
     EXECUTE_QUERY_NO_CHECK(it_create_compute_pipelines, tp, query_create_compute_pipelines);
     uint64_t create_compute_pipelines_timestamp = 0;
-    if (it_create_compute_pipelines.Next()) {
+    if (it_create_compute_pipelines.Next() && !it_create_compute_pipelines.Get(0).is_null()) {
         create_compute_pipelines_timestamp = it_create_compute_pipelines.Get(0).AsLong();
         assert(!it_create_compute_pipelines.Next());
     }
