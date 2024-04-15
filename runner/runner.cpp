@@ -16,7 +16,7 @@
 #include <spirv-tools/optimizer.hpp>
 #include <vulkan/vulkan.h>
 
-#include "spirv.hpp"
+#include "common/spirv-extract.hpp"
 
 #include <algorithm>
 #include <assert.h>
