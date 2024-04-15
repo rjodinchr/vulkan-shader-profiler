@@ -39,7 +39,7 @@ public:
     Status Process() override
     {
         auto module = context()->module();
-        uint32_t ext_inst_id = module->GetExtInstImportId("NonSemantic.VkspReflection.1");
+        uint32_t ext_inst_id = module->GetExtInstImportId("NonSemantic.VkspReflection.2");
         int32_t descriptor_set_0_max_binding = -1;
         std::map<uint32_t, uint32_t> id_to_descriptor_set;
         std::map<uint32_t, uint32_t> id_to_binding;
@@ -205,6 +205,7 @@ private:
             config_->groupCountX = inst->GetOperand(op_id++).words[0];
             config_->groupCountY = inst->GetOperand(op_id++).words[0];
             config_->groupCountZ = inst->GetOperand(op_id++).words[0];
+            config_->dispatchId = inst->GetOperand(op_id++).words[0];
             break;
         case NonSemanticVkspReflectionDescriptorSetBuffer: {
             vksp_descriptor_set ds;

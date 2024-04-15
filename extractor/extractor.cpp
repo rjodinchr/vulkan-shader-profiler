@@ -141,6 +141,8 @@ bool get_dispatch_compute_and_commandBuffer_from_dispatchId(TraceProcessor *tp, 
 
     GET_STR_VALUE(tp, compute, "debug.shader_name", config.entryPoint);
 
+    config.dispatchId = dispatchId;
+
     assert(!it.Next());
     return true;
 }

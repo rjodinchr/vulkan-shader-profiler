@@ -121,6 +121,7 @@ struct vksp_configuration {
     uint32_t groupCountX;
     uint32_t groupCountY;
     uint32_t groupCountZ;
+    uint32_t dispatchId;
 };
 
 struct vksp_specialization_map_entry {

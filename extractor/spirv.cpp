@@ -41,7 +41,7 @@ public:
     {
         auto module = context()->module();
 
-        std::vector<uint32_t> ext_words = spvtools::utils::MakeVector("NonSemantic.VkspReflection.1");
+        std::vector<uint32_t> ext_words = spvtools::utils::MakeVector("NonSemantic.VkspReflection.2");
         auto ExtInstId = context()->TakeNextId();
         auto ExtInst = new spvtools::opt::Instruction(
             context(), spv::Op::OpExtInstImport, 0u, ExtInstId, { { SPV_OPERAND_TYPE_LITERAL_STRING, ext_words } });
@@ -66,6 +66,7 @@ public:
                 { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->groupCountX } },
                 { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->groupCountY } },
                 { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->groupCountZ } },
+                { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->dispatchId } },
             });
         module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(ConfigInst));
 
