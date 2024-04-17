@@ -56,6 +56,11 @@ static VkDeviceMemory gCounterMemory;
 static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
 static bool gDisableCounters = false;
 static uint32_t gPriority = UINT32_MAX;
+static uint32_t gOutputDs = UINT32_MAX;
+static uint32_t gOutputBinding = UINT32_MAX;
+static VkDeviceMemory gOutputMemory = VK_NULL_HANDLE;
+static VkDeviceSize gOutputMemorySize;
+static std::string gOutputString;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
@@ -68,6 +73,19 @@ static std::vector<VkImageView> gImageViews;
 static std::vector<VkSampler> gSamplers;
 static VkDescriptorPool gDescPool;
 static VkShaderModule gShaderModule;
+
+static std::vector<const char *> split_string(std::string input, const char *delimiter)
+{
+    std::vector<const char *> vector;
+    size_t pos = 0;
+    size_t delimiter_size = strlen(delimiter);
+    while ((pos = input.find(delimiter)) != std::string::npos) {
+        auto extension = input.substr(0, pos);
+        vector.push_back(strdup(extension.c_str()));
+        input.erase(0, pos + delimiter_size);
+    }
+    return vector;
+}
 
 static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device, VkQueue &queue,
     VkCommandBuffer &cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, const char *enabledExtensionNames)
@@ -149,15 +167,10 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, globalPriority, 0,
         queueFamilyIndex, nbQueues, queuePriorities.data() };
 
-    std::vector<const char *> extensions;
     size_t pos = 0;
     std::string extensionsStr = std::string(enabledExtensionNames);
-    extensionsStr.erase(0, 1);
-    while ((pos = extensionsStr.find(".")) != std::string::npos) {
-        auto extension = extensionsStr.substr(0, pos);
-        extensions.push_back(strdup(extension.c_str()));
-        extensionsStr.erase(0, pos + 1);
-    }
+    extensionsStr.erase(0, 1); // remove first '.'
+    std::vector<const char *> extensions = split_string(extensionsStr, ".");
     extensions.push_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
 
     const VkDeviceCreateInfo createInfo = {
@@ -263,6 +276,11 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     CHECK_VK(res, "Could not allocate memory for buffer");
     gMemories.push_back(memory);
 
+    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
+        gOutputMemory = memory;
+        gOutputMemorySize = ds.buffer.memorySize;
+    }
+
     CHECK(initialize_memory(device, memory, ds.ds, ds.binding, ds.buffer.memorySize) == 0,
         "Could not initialize memory for buffer");
 
@@ -319,6 +337,11 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for image");
     gMemories.push_back(memory);
+
+    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
+        gOutputMemory = memory;
+        gOutputMemorySize = ds.image.memorySize;
+    }
 
     CHECK(initialize_memory(device, memory, ds.ds, ds.binding, ds.image.memorySize) == 0,
         "Could not initalize memory for image");
@@ -585,6 +608,25 @@ static uint32_t counters_size(std::vector<vksp::vksp_counter> &counters)
     return sizeof(uint64_t) * (2 + counters.size());
 }
 
+static uint32_t dump_output(VkDevice device)
+{
+    void *data;
+    VkResult res = vkMapMemory(device, gOutputMemory, 0, gOutputMemorySize, 0, &data);
+    CHECK_VK(res, "Could not map output memory");
+
+    std::string filename(gInput);
+    filename += "." + gOutputString + ".buffer";
+    FILE *fd = fopen(filename.c_str(), "w");
+    size_t byte_written = 0;
+    while (byte_written != gOutputMemorySize) {
+        byte_written += fwrite(&(((char *)data)[byte_written]), sizeof(char), gOutputMemorySize - byte_written, fd);
+    }
+    fclose(fd);
+
+    vkUnmapMemory(device, gOutputMemory);
+    return 0;
+}
+
 static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue, vksp::vksp_configuration &config,
     std::vector<vksp::vksp_counter> &counters, uint64_t *gpu_timestamps,
     std::chrono::steady_clock::time_point *host_timestamps)
@@ -652,6 +694,10 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
     CHECK_VK(res, "Could not get query pool results");
 
     vkDestroyQueryPool(device, queryPool, nullptr);
+
+    if (gOutputMemory != VK_NULL_HANDLE) {
+        CHECK(dump_output(device) == 0, "Could not dump output memory");
+    }
 
     return 0;
 }
@@ -794,6 +840,7 @@ static void help()
            "\t-h\tDisplay this help and exit\n"
            "\t-m\tNumber of cold run\n"
            "\t-n\tNumber of hot run\n"
+           "\t-o\tDescriptor set index and binding of a buffer to dump after the execution (example: '1.2')\n"
            "\t-p\tGlobal priority (0:low 1:medium 2:high 3:realtime default:unspecified)\n"
            "\t-v\tVerbose mode\n");
 }
@@ -802,7 +849,7 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "chvi:n:m:e:p:b:")) != -1) {
+    while ((c = getopt(argc, argv, "chvi:n:m:e:p:b:o:")) != -1) {
         switch (c) {
         case 'b':
             gBuffersInput = std::string(optarg);
@@ -825,6 +872,17 @@ static bool parse_args(int argc, char **argv)
         case 'm':
             gColdRun = atoi(optarg);
             break;
+        case 'o': {
+            gOutputString = std::string(optarg);
+            auto splits = split_string(gOutputString, ".");
+            if (splits.size() == 2) {
+                gOutputDs = atoi(splits[0]);
+                gOutputBinding = atoi(splits[1]);
+            } else {
+                ERROR("'%s' does not match output (expected: 'ds.binding')", gOutputString.c_str());
+                bHelp = true;
+            }
+        } break;
         case 'p':
             gPriority = atoi(optarg);
             break;
@@ -856,8 +914,10 @@ int main(int argc, char **argv)
     if (!parse_args(argc, argv)) {
         return -1;
     }
-    PRINT("Arguments parsed: input '%s' verbose '%u' spv_target_env '%s' hot_runs '%u' cold_runs '%u'", gInput.c_str(),
-        gVerbose, spvTargetEnvDescription(gSpvTargetEnv), gHotRun, gColdRun);
+    PRINT("Arguments parsed: input '%s' verbose '%u' spv_target_env '%s' hot_runs '%u' cold_runs '%u' buffers '%s' "
+          "output_ds '%u' output_binding '%u' counters '%u' priority '%u'",
+        gInput.c_str(), gVerbose, spvTargetEnvDescription(gSpvTargetEnv), gHotRun, gColdRun, gBuffersInput.c_str(),
+        gOutputDs, gOutputBinding, gDisableCounters, gPriority);
 
     std::vector<uint32_t> shader;
     std::vector<vksp::vksp_descriptor_set> dsVector;
