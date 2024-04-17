@@ -18,6 +18,7 @@
 
 static bool gVerbose = false;
 
+#include "common/buffers_file.hpp"
 #include "common/common.hpp"
 #include "common/spirv-extract.hpp"
 
@@ -46,6 +47,9 @@ static std::map<char, uint8_t> charToByte
           { '9', 9 }, { 'a', 10 }, { 'b', 11 }, { 'c', 12 }, { 'd', 13 }, { 'e', 14 }, { 'f', 15 } };
 
 static std::string gInput = "";
+static std::string gBuffersInput = "";
+static std::unique_ptr<vksp::BuffersFile> gBuffersContents;
+static vksp::buffers_map *gBuffersMap = nullptr;
 static uint32_t gColdRun = 0, gHotRun = 1;
 static VkBuffer gCounterBuffer = VK_NULL_HANDLE;
 static VkDeviceMemory gCounterMemory;
@@ -192,6 +196,27 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     return 0;
 }
 
+static uint32_t initialize_memory(
+    VkDevice device, VkDeviceMemory memory, uint32_t ds, uint32_t binding, uint32_t memory_size)
+{
+    if (gBuffersMap != nullptr) {
+        vksp::buffer_map_key key = std::make_pair(ds, binding);
+        auto find = gBuffersMap->find(key);
+        if (find != gBuffersMap->end()) {
+            void *memory_data;
+            void *buffer_data = find->second.second;
+            uint32_t buffer_size = find->second.first;
+            CHECK(memory_size == buffer_size, "memory sizes does not match");
+
+            VkResult res = vkMapMemory(device, memory, 0, memory_size, 0, &memory_data);
+            CHECK_VK(res, "Could not map memory");
+            memcpy(memory_data, buffer_data, memory_size);
+            vkUnmapMemory(device, memory);
+        }
+    }
+    return 0;
+}
+
 static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
     VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
@@ -237,6 +262,9 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for buffer");
     gMemories.push_back(memory);
+
+    CHECK(initialize_memory(device, memory, ds.ds, ds.binding, ds.buffer.memorySize) == 0,
+        "Could not initialize memory for buffer");
 
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     CHECK_VK(res, "Could not bind buffer and memory");
@@ -291,6 +319,9 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for image");
     gMemories.push_back(memory);
+
+    CHECK(initialize_memory(device, memory, ds.ds, ds.binding, ds.image.memorySize) == 0,
+        "Could not initalize memory for image");
 
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
     CHECK_VK(res, "Could not bind image and memory");
@@ -757,6 +788,7 @@ static void help()
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
            "\n"
            "OPTIONS:\n"
+           "\t-b\tBuffers file associated to the input generated when tracing\n"
            "\t-c\tDisable counters\n"
            "\t-e\tspv_target_env to use (default: vulkan1.3)\n"
            "\t-h\tDisplay this help and exit\n"
@@ -770,8 +802,11 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "chvi:n:m:e:p:")) != -1) {
+    while ((c = getopt(argc, argv, "chvi:n:m:e:p:b:")) != -1) {
         switch (c) {
+        case 'b':
+            gBuffersInput = std::string(optarg);
+            break;
         case 'c':
             gDisableCounters = true;
             break;
@@ -855,6 +890,13 @@ int main(int argc, char **argv)
     CHECK(allocate_descriptor_set(device, descSet, dsVector, descSetLayoutVector) == 0,
         "Could not allocate descriptor set");
     PRINT("Descriptor set allocated");
+
+    if (gBuffersInput != "") {
+        gBuffersContents = std::make_unique<vksp::BuffersFile>(config.dispatchId);
+        if (gBuffersContents->ReadFromFile(gBuffersInput.c_str())) {
+            gBuffersMap = gBuffersContents->GetBuffers();
+        }
+    }
 
     for (auto &ds : dsVector) {
         switch (ds.type) {

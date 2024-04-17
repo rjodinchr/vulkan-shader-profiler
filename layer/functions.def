@@ -55,6 +55,19 @@ FUNC_DEV_INT(CmdWriteTimestamp)
 FUNC_DEV_INT(GetCalibratedTimestampsEXT)
 FUNC_INS_INT(GetPhysicalDeviceProperties)
 
+//Functions used internally for the extracting buffers feature
+FUNC_DEV_INT(CmdCopyBuffer)
+FUNC_DEV_INT(CmdCopyImage)
+FUNC_DEV_INT(CmdPipelineBarrier)
+FUNC_DEV_INT(MapMemory)
+FUNC_DEV_INT(UnmapMemory)
+FUNC_DEV_INT(GetImageMemoryRequirements)
+FUNC_DEV_INT(GetBufferMemoryRequirements)
+FUNC_DEV_INT(DestroyImage)
+FUNC_DEV_INT(DestroyBuffer)
+FUNC_DEV_INT(FreeMemory)
+FUNC_INS_INT(GetPhysicalDeviceMemoryProperties)
+
 #undef FUNC_INS
 #undef FUNC_INS_INT
 #undef FUNC_DEV

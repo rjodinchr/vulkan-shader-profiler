@@ -4,7 +4,7 @@
 
 It allows to visualize a vulkan application using perfetto with information about the compute shader to easily identify which shader is taking most of the application time, and what is its Vulkan SPIR-V source code.
 
-Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`, it is also possible to extract a specific dispatch from the trace (using the `dispatchId` debug information from the trace), and replay it with profiled section with the runner.
+Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`, it is also possible to extract a specific dispatch from the trace (using the `dispatchId` debug information from the trace), and replay it with the runner.
 
 # Legal
 
@@ -79,6 +79,8 @@ To run an application with the `vulkan-kernel-profiler`, one need to ensure the 
 * The `Vulkan-Loader` needs to be able to find the manifest in `<vulkan-shader-profiler>/manifest/vulkan-shader-profiler.json`. This can be achieve by using the follow environment variable: `VK_ADD_LAYER_PATH=<path-to-vulkan-shader-profiler-manifest>`.
 * The Layer needs to be enabled. Either directly from the application, or using the following environment variable: `VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER"`.
 
+It is also possible to extract the content of the memories of buffers and images used by a specific dispatch. It requires to first do a first run to then extract the targeted dispatch. After that a second run can be done with `VKSP_EXTRACT_BUFFERS_FROM=<trace.spvasm>` set. It will generates a `<trace.spvasm.buffers>` file that can be used later on with the `vulkan-shader-profiler-runner` to initialize the memories of the images and buffers used.
+
 ## On ChromeOS
 
 Make sure to have emerged and deployed the `vulkan-shader-profiler`.
@@ -125,6 +127,18 @@ Functions used by `vulkan-shader-profiler` internally:
 * `CmdWriteTimestamp`: To store the timestamp during the command buffer execution.
 * `GetCalibratedTimestampsEXT`: To convert the device timestamp to the host timeline
 * `GetPhysicalDeviceProperties`: To convert the number of ticks returned by `CmdWriteTimestamp` to actual time information in nano-seconds.
+* The following functions are used for the extracting buffers feature:
+  * `CmdPipelineBarrier`
+  * `CmdCopyBuffer`
+  * `CmdCopyImage`
+  * `MapMemory`
+  * `UnmapMemory`
+  * `GetImageMemoryRequirements`
+  * `GetBufferMemoryRequirements`
+  * `DestroyImage`
+  * `DestroyBuffer`
+  * `FreeMemory`
+  * `GetPhysicalDeviceMemoryProperties`
 
 # Extracting a dispatch from a trace
 
@@ -158,6 +172,7 @@ Required options:
 
 Optional options:
 
+* `-b`: path to a buffers file associated to the input (generated when tracing with `VKSP_EXTRACT_BUFFERS_FROM`).
 * `-c`: disable the counters. Allow to run with no overhead introduced by the counters.
 * `-e`: allow to choose the `spv_target_env` to use when using a non-binary input to convert it to binary (default: `vulkan1.3`)
 * `-n`: allow to run the program multiple times
