@@ -16,6 +16,9 @@
 #include <spirv-tools/optimizer.hpp>
 #include <vulkan/vulkan.h>
 
+static bool gVerbose = false;
+
+#include "common/common.hpp"
 #include "common/spirv-extract.hpp"
 
 #include <algorithm>
@@ -27,20 +30,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <vector>
-
-#define PRINT_IMPL(file, message, ...)                                                                                 \
-    do {                                                                                                               \
-        fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
-    } while (0)
-
-#define ERROR(message, ...) PRINT_IMPL(stderr, message, ##__VA_ARGS__)
-
-#define PRINT(message, ...)                                                                                            \
-    do {                                                                                                               \
-        if (gVerbose) {                                                                                                \
-            PRINT_IMPL(stdout, message, ##__VA_ARGS__);                                                                \
-        }                                                                                                              \
-    } while (0)
 
 #define CHECK(statement, message, ...)                                                                                 \
     do {                                                                                                               \
@@ -56,7 +45,6 @@ static std::map<char, uint8_t> charToByte
     = { { '0', 0 }, { '1', 1 }, { '2', 2 }, { '3', 3 }, { '4', 4 }, { '5', 5 }, { '6', 6 }, { '7', 7 }, { '8', 8 },
           { '9', 9 }, { 'a', 10 }, { 'b', 11 }, { 'c', 12 }, { 'd', 13 }, { 'e', 14 }, { 'f', 15 } };
 
-static bool gVerbose = false;
 static std::string gInput = "";
 static uint32_t gColdRun = 0, gHotRun = 1;
 static VkBuffer gCounterBuffer = VK_NULL_HANDLE;
@@ -202,71 +190,6 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     CHECK_VK(res, "Could not begin command buffer");
 
     return 0;
-}
-
-static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<vksp::vksp_descriptor_set> &ds,
-    std::vector<vksp::vksp_push_constant> &pc, std::vector<vksp::vksp_specialization_map_entry> &me,
-    std::vector<vksp::vksp_counter> &counters, vksp::vksp_configuration &config)
-{
-    FILE *input = fopen(gInput.c_str(), "r");
-    fseek(input, 0, SEEK_END);
-    size_t input_size = ftell(input);
-    fseek(input, 0, SEEK_SET);
-    std::vector<char> input_buffer(input_size);
-    size_t size_read = 0;
-    do {
-        size_read += fread(&input_buffer.data()[size_read], 1, input_size - size_read, input);
-    } while (size_read != input_size);
-    fclose(input);
-
-    const uint32_t spirv_magic = 0x07230203;
-    spv_context context = spvContextCreate(gSpvTargetEnv);
-    uint32_t *binary = (uint32_t *)input_buffer.data();
-    size_t size = input_size / sizeof(uint32_t);
-    spv_binary tmp_binary;
-    if (*(uint32_t *)input_buffer.data() != spirv_magic) {
-        spv_diagnostic diagnostic;
-        auto status = spvTextToBinary(context, input_buffer.data(), input_size, &tmp_binary, &diagnostic);
-        if (status != SPV_SUCCESS) {
-            ERROR("Error while converting shader from text to binary: %s", diagnostic->error);
-            spvDiagnosticDestroy(diagnostic);
-            return false;
-        }
-
-        binary = tmp_binary->code;
-        size = tmp_binary->wordCount;
-    }
-
-    spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
-    opt.RegisterPass(spvtools::Optimizer::PassToken(
-        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config, gDisableCounters)));
-    opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
-    spvtools::OptimizerOptions options;
-    options.set_run_validator(false);
-    if (!opt.Run(binary, size, &shader, options)) {
-        ERROR("Error while running 'CreateVkspReflectInfoPass' and 'CreateStripReflectInfoPass'");
-        return false;
-    }
-
-    if (gVerbose) {
-        spv_text text;
-        spv_diagnostic diag;
-        spv_result_t spv_result = spvBinaryToText(context, shader.data(), shader.size(),
-            SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES
-                | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
-            &text, &diag);
-        if (spv_result == SPV_SUCCESS) {
-            PRINT("Shader:\n%s", text->str);
-            spvTextDestroy(text);
-        } else {
-            ERROR("Could not convert shader from binary to text: %s", diag->error);
-            spvDiagnosticDestroy(diag);
-        }
-    }
-
-    spvContextDestroy(context);
-
-    return true;
 }
 
 static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
@@ -907,7 +830,8 @@ int main(int argc, char **argv)
     std::vector<vksp::vksp_specialization_map_entry> meVector;
     std::vector<vksp::vksp_counter> counters;
     vksp::vksp_configuration config;
-    CHECK(extract_from_input(shader, dsVector, pcVector, meVector, counters, config),
+    CHECK(extract_from_input(gInput.c_str(), gSpvTargetEnv, gDisableCounters, gVerbose, shader, dsVector, pcVector,
+              meVector, counters, config),
         "Could not extract data from input");
     PRINT("Shader name: '%s'", config.shaderName);
     PRINT("Entry point: '%s'", config.entryPoint);

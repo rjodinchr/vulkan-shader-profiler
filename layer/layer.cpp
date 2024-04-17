@@ -17,6 +17,11 @@
 
 #include "spirv-tools/libspirv.h"
 
+static bool gVerbose = true;
+
+#include "common/common.hpp"
+#include "common/spirv-extract.hpp"
+
 #include <condition_variable>
 #include <filesystem>
 #include <perfetto.h>
@@ -62,9 +67,10 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
 
 #define DISPATCH_TABLE_ELEMENT(func) PFN_vk##func func;
 
-#define PRINT(message, ...)                                                                                            \
+#undef PRINT_IMPL
+#define PRINT_IMPL(file, message, ...)                                                                                 \
     do {                                                                                                               \
-        fprintf(stderr, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                          \
+        fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
         TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "PRINT", "message", perfetto::DynamicString(message));             \
     } while (0)
 

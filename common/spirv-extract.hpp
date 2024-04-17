@@ -18,6 +18,8 @@
 #include "source/opt/pass.h"
 #include "spirv/unified1/NonSemanticVkspReflection.h"
 
+#include <spirv-tools/optimizer.hpp>
+
 #define UNDEFINED_ID (UINT32_MAX)
 
 namespace vksp {
@@ -551,4 +553,69 @@ private:
     bool disableCounters_;
 };
 
+bool extract_from_input(const char *filename, spv_target_env &spv_target_env, bool disable_counters, bool verbose,
+    std::vector<uint32_t> &shader, std::vector<vksp::vksp_descriptor_set> &ds,
+    std::vector<vksp::vksp_push_constant> &pc, std::vector<vksp::vksp_specialization_map_entry> &me,
+    std::vector<vksp::vksp_counter> &counters, vksp::vksp_configuration &config)
+{
+    FILE *input = fopen(filename, "r");
+    fseek(input, 0, SEEK_END);
+    size_t input_size = ftell(input);
+    fseek(input, 0, SEEK_SET);
+    std::vector<char> input_buffer(input_size);
+    size_t size_read = 0;
+    do {
+        size_read += fread(&input_buffer.data()[size_read], 1, input_size - size_read, input);
+    } while (size_read != input_size);
+    fclose(input);
+
+    const uint32_t spirv_magic = 0x07230203;
+    spv_context context = spvContextCreate(spv_target_env);
+    uint32_t *binary = (uint32_t *)input_buffer.data();
+    size_t size = input_size / sizeof(uint32_t);
+    spv_binary tmp_binary;
+    if (*(uint32_t *)input_buffer.data() != spirv_magic) {
+        spv_diagnostic diagnostic;
+        auto status = spvTextToBinary(context, input_buffer.data(), input_size, &tmp_binary, &diagnostic);
+        if (status != SPV_SUCCESS) {
+            ERROR("Error while converting shader from text to binary: %s", diagnostic->error);
+            spvDiagnosticDestroy(diagnostic);
+            return false;
+        }
+
+        binary = tmp_binary->code;
+        size = tmp_binary->wordCount;
+    }
+
+    spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
+    opt.RegisterPass(spvtools::Optimizer::PassToken(
+        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config, disable_counters)));
+    opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
+    spvtools::OptimizerOptions options;
+    options.set_run_validator(false);
+    if (!opt.Run(binary, size, &shader, options)) {
+        ERROR("Error while running 'CreateVkspReflectInfoPass' and 'CreateStripReflectInfoPass'");
+        return false;
+    }
+
+    if (verbose) {
+        spv_text text;
+        spv_diagnostic diag;
+        spv_result_t spv_result = spvBinaryToText(context, shader.data(), shader.size(),
+            SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES
+                | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
+            &text, &diag);
+        if (spv_result == SPV_SUCCESS) {
+            PRINT("Shader:\n%s", text->str);
+            spvTextDestroy(text);
+        } else {
+            ERROR("Could not convert shader from binary to text: %s", diag->error);
+            spvDiagnosticDestroy(diag);
+        }
+    }
+
+    spvContextDestroy(context);
+
+    return true;
+}
 }

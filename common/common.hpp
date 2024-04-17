@@ -17,6 +17,20 @@
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+#define PRINT_IMPL(file, message, ...)                                                                                 \
+    do {                                                                                                               \
+        fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
+    } while (0)
+
+#define ERROR(message, ...) PRINT_IMPL(stderr, message, ##__VA_ARGS__)
+
+#define PRINT(message, ...)                                                                                            \
+    do {                                                                                                               \
+        if (gVerbose) {                                                                                                \
+            PRINT_IMPL(stdout, message, ##__VA_ARGS__);                                                                \
+        }                                                                                                              \
+    } while (0)
+
 namespace vksp {
 
 struct vksp_push_constant {

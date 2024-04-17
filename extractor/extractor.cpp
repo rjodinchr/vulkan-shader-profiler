@@ -26,18 +26,11 @@
 #include <set>
 #include <string>
 
+#include "common/common.hpp"
 #include "spirv.hpp"
-#include "utils.hpp"
 
 using namespace perfetto::trace_processor;
 using namespace spvtools;
-
-#define PRINT(message, ...)                                                                                            \
-    do {                                                                                                               \
-        if (gVerbose) {                                                                                                \
-            PRINT_IMPL(stdout, message, ##__VA_ARGS__);                                                                \
-        }                                                                                                              \
-    } while (0)
 
 #define CHECK(statement, message, ...)                                                                                 \
     do {                                                                                                               \

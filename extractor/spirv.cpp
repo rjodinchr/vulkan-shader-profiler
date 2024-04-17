@@ -16,7 +16,6 @@
 #include "spirv-tools/optimizer.hpp"
 
 #include "spirv.hpp"
-#include "utils.hpp"
 
 #include "common/common.hpp"
 #include "source/opt/pass.h"
