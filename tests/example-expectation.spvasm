@@ -79,7 +79,7 @@
      %uint_8 = OpConstant %uint 8
           %6 = OpVariable %_ptr_StorageBuffer__struct_19 StorageBuffer
     %ulong_0 = OpConstant %ulong 0
-         %59 = OpExtInst %void %58 Configuration ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_KHR_shader_clock" 12 "020000000100000001000000" "vksp_s0" "test_simple" 128 1 1 0
+         %59 = OpExtInst %void %58 Configuration ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_EXT_descriptor_indexing.VK_KHR_shader_clock" 12 "020000000100000001000000" "vksp_s0" "test_simple" 128 1 1 0
          %60 = OpExtInst %void %58 PushConstants 0 28 "00000000000000000000000000000000000000000000000000000000" 32
          %61 = OpExtInst %void %58 DescriptorSetBuffer 0 0 7 0 0 0 1024 63 1024 0 1024 0 0
          %62 = OpExtInst %void %58 DescriptorSetBuffer 0 1 7 0 0 0 16 34 16 0 16 0 0

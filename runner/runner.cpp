@@ -84,6 +84,7 @@ static std::vector<const char *> split_string(std::string input, const char *del
         vector.push_back(strdup(extension.c_str()));
         input.erase(0, pos + delimiter_size);
     }
+    vector.push_back(strdup(input.c_str()));
     return vector;
 }
 
