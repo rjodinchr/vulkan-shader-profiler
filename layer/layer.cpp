@@ -1401,10 +1401,15 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
         ppEnabledExtensionNames.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
     }
     ppEnabledExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+    ppEnabledExtensionNames.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 
     VkDeviceCreateInfo mCreateInfo = *pCreateInfo;
     mCreateInfo.enabledExtensionCount = ppEnabledExtensionNames.size();
     mCreateInfo.ppEnabledExtensionNames = ppEnabledExtensionNames.data();
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeature
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES, (void *)mCreateInfo.pNext, VK_TRUE };
+    mCreateInfo.pNext = &timelineSemaphoreFeature;
 
     VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
     if (ret != VK_SUCCESS) {
