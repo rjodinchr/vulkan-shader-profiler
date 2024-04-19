@@ -210,24 +210,69 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     return 0;
 }
 
-static uint32_t initialize_memory(
-    VkDevice device, VkDeviceMemory memory, uint32_t ds, uint32_t binding, uint32_t memory_size)
+static uint32_t initialize_buffer(VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkBuffer shaderBuffer)
 {
-    if (gBuffersMap != nullptr) {
-        vksp::buffer_map_key key = std::make_pair(ds, binding);
-        auto find = gBuffersMap->find(key);
-        if (find != gBuffersMap->end()) {
-            void *memory_data;
-            void *buffer_data = find->second.second;
-            uint32_t buffer_size = find->second.first;
-            CHECK(memory_size == buffer_size, "memory sizes does not match");
+    if (gBuffersMap == nullptr) {
+        return 0;
+    }
+    uint32_t dstSet = ds.ds;
+    uint32_t dstBinding = ds.binding;
+    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
+    auto find = gBuffersMap->find(key);
+    if (find == gBuffersMap->end()) {
+        return 0;
+    }
+    void *buffer_data = find->second.second;
+    CHECK(find->second.first == ds.buffer.memorySize, "mismatch in memorySize during initialization buffer");
 
-            VkResult res = vkMapMemory(device, memory, 0, memory_size, 0, &memory_data);
-            CHECK_VK(res, "Could not map memory");
-            memcpy(memory_data, buffer_data, memory_size);
-            vkUnmapMemory(device, memory);
+    VkBuffer buffer;
+    const VkBufferCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, ds.buffer.size,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr };
+
+    VkResult res = vkCreateBuffer(device, &pCreateInfo, nullptr, &buffer);
+    CHECK_VK(res, "Could not create initialization buffer");
+    gBuffers.push_back(buffer);
+
+    VkMemoryRequirements memreqs;
+    vkGetBufferMemoryRequirements(device, buffer, &memreqs);
+    bool memoryTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
+        bool valid = (1ULL << i) & memreqs.memoryTypeBits;
+        auto required_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool satisfactory = (dev_properties & required_properties) == required_properties;
+        if (satisfactory && valid) {
+            ds.buffer.memoryType = i;
+            memoryTypeFound = true;
+            break;
         }
     }
+    CHECK(memoryTypeFound, "Could not find memoryType for initialization buffer");
+
+    const VkMemoryAllocateInfo pAllocateInfo = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        ds.buffer.memorySize,
+        ds.buffer.memoryType,
+    };
+    VkDeviceMemory memory;
+    res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    CHECK_VK(res, "Could not allocate memory for initialization buffer");
+    gMemories.push_back(memory);
+
+    res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
+    CHECK_VK(res, "Could not bind buffer memory for initialization buffer");
+
+    void *memory_data;
+    res = vkMapMemory(device, memory, 0, ds.buffer.memorySize, 0, &memory_data);
+    CHECK_VK(res, "Could not map memory for initialization buffer");
+    memcpy(memory_data, buffer_data, ds.buffer.memorySize);
+    vkUnmapMemory(device, memory);
+
+    const VkBufferCopy pRegion = { 0, 0, ds.buffer.size };
+    vkCmdCopyBuffer(cmdBuffer, buffer, shaderBuffer, 1, &pRegion);
+
     return 0;
 }
 
@@ -282,11 +327,11 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
         gOutputMemorySize = ds.buffer.memorySize;
     }
 
-    CHECK(initialize_memory(device, memory, ds.ds, ds.binding, ds.buffer.memorySize) == 0,
-        "Could not initialize memory for buffer");
-
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     CHECK_VK(res, "Could not bind buffer and memory");
+
+    CHECK(
+        initialize_buffer(device, cmdBuffer, memProperties, ds, buffer) == 0, "Could not initialize memory for buffer");
 
     const VkDescriptorBufferInfo bufferInfo = { buffer, ds.buffer.offset, ds.buffer.range };
     const VkWriteDescriptorSet write = {
@@ -307,6 +352,102 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
         gCounterBuffer = buffer;
         gCounterMemory = memory;
     }
+
+    return 0;
+}
+
+static uint32_t initialize_image(VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkImage shaderImage,
+    VkImageSubresourceRange &subresourceRange)
+{
+    if (gBuffersMap == nullptr) {
+        return 0;
+    }
+    uint32_t dstSet = ds.ds;
+    uint32_t dstBinding = ds.binding;
+    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
+    auto find = gBuffersMap->find(key);
+    if (find == gBuffersMap->end()) {
+        return 0;
+    }
+    void *image_data = find->second.second;
+    CHECK(find->second.first == ds.image.memorySize, "mismatch in memorySize during initialization buffer");
+
+    VkImage image;
+    VkExtent3D extent = { ds.image.width, ds.image.height, ds.image.depth };
+    const VkImageCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, nullptr, ds.image.imageFlags,
+        (VkImageType)ds.image.imageType, (VkFormat)ds.image.format, extent, ds.image.mipLevels, ds.image.arrayLayers,
+        (VkSampleCountFlagBits)ds.image.samples, (VkImageTiling)ds.image.tiling, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        VK_SHARING_MODE_EXCLUSIVE, 0, nullptr, (VkImageLayout)ds.image.initialLayout };
+
+    VkResult res = vkCreateImage(device, &pCreateInfo, nullptr, &image);
+    CHECK_VK(res, "Could not create initialization image");
+    gImages.push_back(image);
+
+    VkMemoryRequirements memreqs;
+    vkGetImageMemoryRequirements(device, image, &memreqs);
+    bool memoryTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
+        bool valid = (1ULL << i) & memreqs.memoryTypeBits;
+        auto required_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool satisfactory = (dev_properties & required_properties) == required_properties;
+        if (satisfactory && valid) {
+            ds.image.memoryType = i;
+            memoryTypeFound = true;
+            break;
+        }
+    }
+    CHECK(memoryTypeFound, "Could not find memoryType for initialization image");
+
+    const VkMemoryAllocateInfo pAllocateInfo = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        ds.image.memorySize,
+        ds.image.memoryType,
+    };
+
+    VkDeviceMemory memory;
+    res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    CHECK_VK(res, "Could not allocate memory for initialization image");
+    gMemories.push_back(memory);
+
+    res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
+    CHECK_VK(res, "Could not bind memory for initialization image");
+
+    void *memory_data;
+    res = vkMapMemory(device, memory, 0, ds.image.memorySize, 0, &memory_data);
+    CHECK_VK(res, "Could not map memory for initialization image");
+    memcpy(memory_data, image_data, ds.image.memorySize);
+    vkUnmapMemory(device, memory);
+
+    VkImageMemoryBarrier imageBarrier = {
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        nullptr,
+        0,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        (VkImageLayout)ds.image.initialLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        0,
+        0,
+        image,
+        subresourceRange,
+    };
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+        nullptr, 0, nullptr, 1, &imageBarrier);
+
+    const VkImageCopy pRegion = {
+        .srcSubresource
+        = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+        .srcOffset = { 0, 0, 0 },
+        .dstSubresource
+        = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+        .dstOffset = { 0, 0, 0 },
+        .extent = { ds.image.width, ds.image.height, ds.image.depth },
+    };
+
+    vkCmdCopyImage(
+        cmdBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, shaderImage, VK_IMAGE_LAYOUT_GENERAL, 1, &pRegion);
 
     return 0;
 }
@@ -344,18 +485,40 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
         gOutputMemorySize = ds.image.memorySize;
     }
 
-    CHECK(initialize_memory(device, memory, ds.ds, ds.binding, ds.image.memorySize) == 0,
-        "Could not initalize memory for image");
-
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
     CHECK_VK(res, "Could not bind image and memory");
+
+    VkImageSubresourceRange subresourceRange = { ds.image.aspectMask, ds.image.baseMipLevel, ds.image.levelCount,
+        ds.image.baseArrayLayer, ds.image.layerCount };
+
+    VkImageMemoryBarrier imageBarrier = {
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        nullptr,
+        0,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        (VkImageLayout)ds.image.initialLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        0,
+        0,
+        image,
+        subresourceRange,
+    };
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+        nullptr, 0, nullptr, 1, &imageBarrier);
+
+    CHECK(initialize_image(device, cmdBuffer, memProperties, ds, image, subresourceRange) == 0, "Could not initalize memory for image");
+
+    imageBarrier.srcAccessMask = imageBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+        nullptr, 0, nullptr, 1, &imageBarrier);
 
     VkImageView image_view;
     VkComponentMapping components
         = { (VkComponentSwizzle)ds.image.component_r, (VkComponentSwizzle)ds.image.component_g,
               (VkComponentSwizzle)ds.image.component_b, (VkComponentSwizzle)ds.image.component_a };
-    VkImageSubresourceRange subresourceRange = { ds.image.aspectMask, ds.image.baseMipLevel, ds.image.levelCount,
-        ds.image.baseArrayLayer, ds.image.layerCount };
     const VkImageViewCreateInfo pViewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, nullptr, ds.image.viewFlags,
         image, (VkImageViewType)ds.image.viewType, (VkFormat)ds.image.viewFormat, components, subresourceRange };
     res = vkCreateImageView(device, &pViewInfo, nullptr, &image_view);
