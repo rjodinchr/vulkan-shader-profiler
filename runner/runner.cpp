@@ -58,9 +58,12 @@ static bool gDisableCounters = false;
 static uint32_t gPriority = UINT32_MAX;
 static uint32_t gOutputDs = UINT32_MAX;
 static uint32_t gOutputBinding = UINT32_MAX;
-static VkDeviceMemory gOutputMemory = VK_NULL_HANDLE;
-static VkDeviceSize gOutputMemorySize;
+static VkBuffer gOutputBuffer = VK_NULL_HANDLE;
+static VkImage gOutputImage = VK_NULL_HANDLE;
+static vksp::vksp_descriptor_set *gOutputDsPtr = nullptr;
 static std::string gOutputString;
+static VkDeviceMemory gOutputMemory;
+static VkDeviceSize gOutputMemorySize;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
@@ -210,23 +213,9 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     return 0;
 }
 
-static uint32_t initialize_buffer(VkDevice device, VkCommandBuffer cmdBuffer,
-    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkBuffer shaderBuffer)
+static uint32_t allocate_buffer(VkDevice device, VkPhysicalDeviceMemoryProperties &memProperties,
+    vksp::vksp_descriptor_set &ds, VkBuffer &buffer, VkDeviceMemory &memory)
 {
-    if (gBuffersMap == nullptr) {
-        return 0;
-    }
-    uint32_t dstSet = ds.ds;
-    uint32_t dstBinding = ds.binding;
-    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
-    auto find = gBuffersMap->find(key);
-    if (find == gBuffersMap->end()) {
-        return 0;
-    }
-    void *buffer_data = find->second.second;
-    CHECK(find->second.first == ds.buffer.memorySize, "mismatch in memorySize during initialization buffer");
-
-    VkBuffer buffer;
     const VkBufferCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, ds.buffer.size,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr };
 
@@ -256,7 +245,6 @@ static uint32_t initialize_buffer(VkDevice device, VkCommandBuffer cmdBuffer,
         ds.buffer.memorySize,
         ds.buffer.memoryType,
     };
-    VkDeviceMemory memory;
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for initialization buffer");
     gMemories.push_back(memory);
@@ -264,8 +252,31 @@ static uint32_t initialize_buffer(VkDevice device, VkCommandBuffer cmdBuffer,
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     CHECK_VK(res, "Could not bind buffer memory for initialization buffer");
 
+    return 0;
+}
+
+static uint32_t initialize_buffer(VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkBuffer shaderBuffer)
+{
+    if (gBuffersMap == nullptr) {
+        return 0;
+    }
+    uint32_t dstSet = ds.ds;
+    uint32_t dstBinding = ds.binding;
+    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
+    auto find = gBuffersMap->find(key);
+    if (find == gBuffersMap->end()) {
+        return 0;
+    }
+    void *buffer_data = find->second.second;
+    CHECK(find->second.first == ds.buffer.memorySize, "mismatch in memorySize during initialization buffer");
+
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+    CHECK(allocate_buffer(device, memProperties, ds, buffer, memory) == 0, "Could not allocate initialization buffer");
+
     void *memory_data;
-    res = vkMapMemory(device, memory, 0, ds.buffer.memorySize, 0, &memory_data);
+    VkResult res = vkMapMemory(device, memory, 0, ds.buffer.memorySize, 0, &memory_data);
     CHECK_VK(res, "Could not map memory for initialization buffer");
     memcpy(memory_data, buffer_data, ds.buffer.memorySize);
     vkUnmapMemory(device, memory);
@@ -290,6 +301,11 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     res = vkCreateBuffer(device, &pCreateInfo, nullptr, &buffer);
     CHECK_VK(res, "Could not create buffer");
     gBuffers.push_back(buffer);
+
+    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
+        gOutputBuffer = buffer;
+        gOutputDsPtr = &ds;
+    }
 
     if (bCounter) {
         VkMemoryRequirements memreqs;
@@ -322,11 +338,6 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     CHECK_VK(res, "Could not allocate memory for buffer");
     gMemories.push_back(memory);
 
-    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
-        gOutputMemory = memory;
-        gOutputMemorySize = ds.buffer.memorySize;
-    }
-
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     CHECK_VK(res, "Could not bind buffer and memory");
 
@@ -356,24 +367,9 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     return 0;
 }
 
-static uint32_t initialize_image(VkDevice device, VkCommandBuffer cmdBuffer,
-    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkImage shaderImage,
-    VkImageSubresourceRange &subresourceRange)
+static uint32_t allocate_image(VkDevice device, VkPhysicalDeviceMemoryProperties &memProperties,
+    vksp::vksp_descriptor_set &ds, VkImage &image, VkDeviceMemory &memory)
 {
-    if (gBuffersMap == nullptr) {
-        return 0;
-    }
-    uint32_t dstSet = ds.ds;
-    uint32_t dstBinding = ds.binding;
-    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
-    auto find = gBuffersMap->find(key);
-    if (find == gBuffersMap->end()) {
-        return 0;
-    }
-    void *image_data = find->second.second;
-    CHECK(find->second.first == ds.image.memorySize, "mismatch in memorySize during initialization buffer");
-
-    VkImage image;
     VkExtent3D extent = { ds.image.width, ds.image.height, ds.image.depth };
     const VkImageCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, nullptr, ds.image.imageFlags,
         (VkImageType)ds.image.imageType, (VkFormat)ds.image.format, extent, ds.image.mipLevels, ds.image.arrayLayers,
@@ -407,7 +403,6 @@ static uint32_t initialize_image(VkDevice device, VkCommandBuffer cmdBuffer,
         ds.image.memoryType,
     };
 
-    VkDeviceMemory memory;
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for initialization image");
     gMemories.push_back(memory);
@@ -415,8 +410,32 @@ static uint32_t initialize_image(VkDevice device, VkCommandBuffer cmdBuffer,
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
     CHECK_VK(res, "Could not bind memory for initialization image");
 
+    return 0;
+}
+
+static uint32_t initialize_image(VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkImage shaderImage,
+    VkImageSubresourceRange &subresourceRange)
+{
+    if (gBuffersMap == nullptr) {
+        return 0;
+    }
+    uint32_t dstSet = ds.ds;
+    uint32_t dstBinding = ds.binding;
+    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
+    auto find = gBuffersMap->find(key);
+    if (find == gBuffersMap->end()) {
+        return 0;
+    }
+    void *image_data = find->second.second;
+    CHECK(find->second.first == ds.image.memorySize, "mismatch in memorySize during initialization buffer");
+
+    VkImage image;
+    VkDeviceMemory memory;
+    CHECK(allocate_image(device, memProperties, ds, image, memory) == 0, "Could not allocate initialization image");
+
     void *memory_data;
-    res = vkMapMemory(device, memory, 0, ds.image.memorySize, 0, &memory_data);
+    VkResult res = vkMapMemory(device, memory, 0, ds.image.memorySize, 0, &memory_data);
     CHECK_VK(res, "Could not map memory for initialization image");
     memcpy(memory_data, image_data, ds.image.memorySize);
     vkUnmapMemory(device, memory);
@@ -468,6 +487,11 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     CHECK_VK(res, "Could not create image");
     gImages.push_back(image);
 
+    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
+        gOutputImage = image;
+        gOutputDsPtr = &ds;
+    }
+
     const VkMemoryAllocateInfo pAllocateInfo = {
         VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         nullptr,
@@ -479,11 +503,6 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     CHECK_VK(res, "Could not allocate memory for image");
     gMemories.push_back(memory);
-
-    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
-        gOutputMemory = memory;
-        gOutputMemorySize = ds.image.memorySize;
-    }
 
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
     CHECK_VK(res, "Could not bind image and memory");
@@ -506,7 +525,8 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
         nullptr, 0, nullptr, 1, &imageBarrier);
 
-    CHECK(initialize_image(device, cmdBuffer, memProperties, ds, image, subresourceRange) == 0, "Could not initalize memory for image");
+    CHECK(initialize_image(device, cmdBuffer, memProperties, ds, image, subresourceRange) == 0,
+        "Could not initalize memory for image");
 
     imageBarrier.srcAccessMask = imageBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
     imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -772,6 +792,65 @@ static uint32_t counters_size(std::vector<vksp::vksp_counter> &counters)
     return sizeof(uint64_t) * (2 + counters.size());
 }
 
+static uint32_t record_dump_output(
+    VkDevice device, VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties)
+{
+    switch (gOutputDsPtr->type) {
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+        VkBuffer buffer;
+        CHECK(allocate_buffer(device, memProperties, *gOutputDsPtr, buffer, gOutputMemory) == 0,
+            "Could not allocate output buffer");
+        gOutputMemorySize = gOutputDsPtr->buffer.memorySize;
+
+        const VkBufferCopy pRegion = { 0, 0, gOutputDsPtr->buffer.size };
+        vkCmdCopyBuffer(cmdBuffer, gOutputBuffer, buffer, 1, &pRegion);
+    } break;
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+        VkImage image;
+        CHECK(allocate_image(device, memProperties, *gOutputDsPtr, image, gOutputMemory) == 0,
+            "Could not allocate output image");
+        gOutputMemorySize = gOutputDsPtr->image.memorySize;
+
+        VkImageSubresourceRange subresourceRange = { gOutputDsPtr->image.aspectMask, gOutputDsPtr->image.baseMipLevel,
+            gOutputDsPtr->image.levelCount, gOutputDsPtr->image.baseArrayLayer, gOutputDsPtr->image.layerCount };
+
+        VkImageMemoryBarrier imageBarrier = {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            nullptr,
+            0,
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            0,
+            0,
+            image,
+            subresourceRange,
+        };
+        vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+            nullptr, 0, nullptr, 1, &imageBarrier);
+
+        const VkImageCopy pRegion = {
+            .srcSubresource
+            = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+            .srcOffset = { 0, 0, 0 },
+            .dstSubresource
+            = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+            .dstOffset = { 0, 0, 0 },
+            .extent = { gOutputDsPtr->image.width, gOutputDsPtr->image.height, gOutputDsPtr->image.depth },
+        };
+
+        vkCmdCopyImage(
+            cmdBuffer, gOutputImage, VK_IMAGE_LAYOUT_GENERAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &pRegion);
+    } break;
+    default:
+        PRINT("Unsupported descritpor set type");
+        return -1;
+    }
+    return 0;
+}
+
 static uint32_t dump_output(VkDevice device)
 {
     void *data;
@@ -793,7 +872,7 @@ static uint32_t dump_output(VkDevice device)
 
 static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue, vksp::vksp_configuration &config,
     std::vector<vksp::vksp_counter> &counters, uint64_t *gpu_timestamps,
-    std::chrono::steady_clock::time_point *host_timestamps)
+    std::chrono::steady_clock::time_point *host_timestamps, VkPhysicalDeviceMemoryProperties &memProperties)
 {
     VkResult res;
 
@@ -838,6 +917,10 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
     }
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 2);
 
+    if (gOutputDsPtr != nullptr) {
+        CHECK(record_dump_output(device, cmdBuffer, memProperties) == 0, "Could not record dumping of output");
+    }
+
     res = vkEndCommandBuffer(cmdBuffer);
     CHECK_VK(res, "Could not end command buffer");
 
@@ -858,10 +941,6 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
     CHECK_VK(res, "Could not get query pool results");
 
     vkDestroyQueryPool(device, queryPool, nullptr);
-
-    if (gOutputMemory != VK_NULL_HANDLE) {
-        CHECK(dump_output(device) == 0, "Could not dump output memory");
-    }
 
     return 0;
 }
@@ -1211,12 +1290,16 @@ int main(int argc, char **argv)
 
     uint64_t gpu_timestamps[gNbGpuTimestamps];
     std::chrono::steady_clock::time_point host_timestamps[3];
-    CHECK(
-        execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps) == 0, "Could not execute");
+    CHECK(execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps, memProperties) == 0,
+        "Could not execute");
     PRINT("Execution completed");
 
     CHECK(print_results(pDevice, device, config, counters, gpu_timestamps, host_timestamps) == 0,
         "Could not print all results");
+
+    if (gOutputDsPtr != nullptr) {
+        CHECK(dump_output(device) == 0, "Could not dump output memory");
+    }
 
     clean_vk_objects(device, cmdBuffer, descSet, descSetLayoutVector, pipelineLayout, pipeline);
 
