@@ -26,18 +26,11 @@
 #include <set>
 #include <string>
 
+#include "common/common.hpp"
 #include "spirv.hpp"
-#include "utils.hpp"
 
 using namespace perfetto::trace_processor;
 using namespace spvtools;
-
-#define PRINT(message, ...)                                                                                            \
-    do {                                                                                                               \
-        if (gVerbose) {                                                                                                \
-            PRINT_IMPL(stdout, message, ##__VA_ARGS__);                                                                \
-        }                                                                                                              \
-    } while (0)
 
 #define CHECK(statement, message, ...)                                                                                 \
     do {                                                                                                               \
@@ -140,6 +133,8 @@ bool get_dispatch_compute_and_commandBuffer_from_dispatchId(TraceProcessor *tp, 
     GET_INT_VALUE(tp, dispatch, "debug.groupCountZ", config.groupCountZ);
 
     GET_STR_VALUE(tp, compute, "debug.shader_name", config.entryPoint);
+
+    config.dispatchId = dispatchId;
 
     assert(!it.Next());
     return true;

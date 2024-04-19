@@ -19,7 +19,18 @@ if (NOT PERFETTO_LIBRARY)
 endif()
 
 add_library (vulkan-shader-profiler MODULE layer.cpp)
-target_include_directories(vulkan-shader-profiler PUBLIC ${Vulkan_INCLUDE_DIRS} ${PERFETTO_SDK_PATH} ${SPIRV-Tools-opt_INCLUDE_DIRS})
+target_include_directories(vulkan-shader-profiler PUBLIC
+  ${Vulkan_INCLUDE_DIRS}
+  ${PERFETTO_SDK_PATH}
+  ${SPIRV-Tools-opt_INCLUDE_DIRS}
+  ${SPIRV_TOOLS_SOURCE_PATH}
+  ${SPIRV_TOOLS_BUILD_PATH}
+  ${CMAKE_SOURCE_DIR}
+)
+if (SPIRV_HEADERS_INCLUDE_PATH)
+  target_include_directories(vulkan-shader-profiler PUBLIC ${SPIRV_HEADERS_INCLUDE_PATH})
+endif()
+
 target_link_libraries (vulkan-shader-profiler ${SPIRV-Tools-opt_LIBRARIES} ${PERFETTO_LIBRARY})
 
 set(BACKEND "InProcess"

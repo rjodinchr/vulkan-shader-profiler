@@ -16,7 +16,11 @@
 #include <spirv-tools/optimizer.hpp>
 #include <vulkan/vulkan.h>
 
-#include "spirv.hpp"
+static bool gVerbose = false;
+
+#include "common/buffers_file.hpp"
+#include "common/common.hpp"
+#include "common/spirv-extract.hpp"
 
 #include <algorithm>
 #include <assert.h>
@@ -27,20 +31,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <vector>
-
-#define PRINT_IMPL(file, message, ...)                                                                                 \
-    do {                                                                                                               \
-        fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
-    } while (0)
-
-#define ERROR(message, ...) PRINT_IMPL(stderr, message, ##__VA_ARGS__)
-
-#define PRINT(message, ...)                                                                                            \
-    do {                                                                                                               \
-        if (gVerbose) {                                                                                                \
-            PRINT_IMPL(stdout, message, ##__VA_ARGS__);                                                                \
-        }                                                                                                              \
-    } while (0)
 
 #define CHECK(statement, message, ...)                                                                                 \
     do {                                                                                                               \
@@ -56,14 +46,24 @@ static std::map<char, uint8_t> charToByte
     = { { '0', 0 }, { '1', 1 }, { '2', 2 }, { '3', 3 }, { '4', 4 }, { '5', 5 }, { '6', 6 }, { '7', 7 }, { '8', 8 },
           { '9', 9 }, { 'a', 10 }, { 'b', 11 }, { 'c', 12 }, { 'd', 13 }, { 'e', 14 }, { 'f', 15 } };
 
-static bool gVerbose = false;
 static std::string gInput = "";
+static std::string gBuffersInput = "";
+static std::unique_ptr<vksp::BuffersFile> gBuffersContents;
+static vksp::buffers_map *gBuffersMap = nullptr;
 static uint32_t gColdRun = 0, gHotRun = 1;
 static VkBuffer gCounterBuffer = VK_NULL_HANDLE;
 static VkDeviceMemory gCounterMemory;
 static spv_target_env gSpvTargetEnv = SPV_ENV_VULKAN_1_3;
 static bool gDisableCounters = false;
 static uint32_t gPriority = UINT32_MAX;
+static uint32_t gOutputDs = UINT32_MAX;
+static uint32_t gOutputBinding = UINT32_MAX;
+static VkBuffer gOutputBuffer = VK_NULL_HANDLE;
+static VkImage gOutputImage = VK_NULL_HANDLE;
+static vksp::vksp_descriptor_set *gOutputDsPtr = nullptr;
+static std::string gOutputString;
+static VkDeviceMemory gOutputMemory;
+static VkDeviceSize gOutputMemorySize;
 
 static const uint32_t gNbGpuTimestamps = 3;
 
@@ -76,6 +76,20 @@ static std::vector<VkImageView> gImageViews;
 static std::vector<VkSampler> gSamplers;
 static VkDescriptorPool gDescPool;
 static VkShaderModule gShaderModule;
+
+static std::vector<const char *> split_string(std::string input, const char *delimiter)
+{
+    std::vector<const char *> vector;
+    size_t pos = 0;
+    size_t delimiter_size = strlen(delimiter);
+    while ((pos = input.find(delimiter)) != std::string::npos) {
+        auto extension = input.substr(0, pos);
+        vector.push_back(strdup(extension.c_str()));
+        input.erase(0, pos + delimiter_size);
+    }
+    vector.push_back(strdup(input.c_str()));
+    return vector;
+}
 
 static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &device, VkQueue &queue,
     VkCommandBuffer &cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties, const char *enabledExtensionNames)
@@ -157,15 +171,10 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, globalPriority, 0,
         queueFamilyIndex, nbQueues, queuePriorities.data() };
 
-    std::vector<const char *> extensions;
     size_t pos = 0;
     std::string extensionsStr = std::string(enabledExtensionNames);
-    extensionsStr.erase(0, 1);
-    while ((pos = extensionsStr.find(".")) != std::string::npos) {
-        auto extension = extensionsStr.substr(0, pos);
-        extensions.push_back(strdup(extension.c_str()));
-        extensionsStr.erase(0, pos + 1);
-    }
+    extensionsStr.erase(0, 1); // remove first '.'
+    std::vector<const char *> extensions = split_string(extensionsStr, ".");
     extensions.push_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
 
     const VkDeviceCreateInfo createInfo = {
@@ -204,69 +213,78 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     return 0;
 }
 
-static bool extract_from_input(std::vector<uint32_t> &shader, std::vector<vksp::vksp_descriptor_set> &ds,
-    std::vector<vksp::vksp_push_constant> &pc, std::vector<vksp::vksp_specialization_map_entry> &me,
-    std::vector<vksp::vksp_counter> &counters, vksp::vksp_configuration &config)
+static uint32_t allocate_buffer(VkDevice device, VkPhysicalDeviceMemoryProperties &memProperties,
+    vksp::vksp_descriptor_set &ds, VkBuffer &buffer, VkDeviceMemory &memory)
 {
-    FILE *input = fopen(gInput.c_str(), "r");
-    fseek(input, 0, SEEK_END);
-    size_t input_size = ftell(input);
-    fseek(input, 0, SEEK_SET);
-    std::vector<char> input_buffer(input_size);
-    size_t size_read = 0;
-    do {
-        size_read += fread(&input_buffer.data()[size_read], 1, input_size - size_read, input);
-    } while (size_read != input_size);
-    fclose(input);
+    const VkBufferCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, ds.buffer.size,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr };
 
-    const uint32_t spirv_magic = 0x07230203;
-    spv_context context = spvContextCreate(gSpvTargetEnv);
-    uint32_t *binary = (uint32_t *)input_buffer.data();
-    size_t size = input_size / sizeof(uint32_t);
-    spv_binary tmp_binary;
-    if (*(uint32_t *)input_buffer.data() != spirv_magic) {
-        spv_diagnostic diagnostic;
-        auto status = spvTextToBinary(context, input_buffer.data(), input_size, &tmp_binary, &diagnostic);
-        if (status != SPV_SUCCESS) {
-            ERROR("Error while converting shader from text to binary: %s", diagnostic->error);
-            spvDiagnosticDestroy(diagnostic);
-            return false;
-        }
+    VkResult res = vkCreateBuffer(device, &pCreateInfo, nullptr, &buffer);
+    CHECK_VK(res, "Could not create initialization buffer");
+    gBuffers.push_back(buffer);
 
-        binary = tmp_binary->code;
-        size = tmp_binary->wordCount;
-    }
-
-    spvtools::Optimizer opt(SPV_ENV_VULKAN_1_3);
-    opt.RegisterPass(spvtools::Optimizer::PassToken(
-        std::make_unique<vksp::ExtractVkspReflectInfoPass>(&pc, &ds, &me, &counters, &config, gDisableCounters)));
-    opt.RegisterPass(spvtools::CreateStripReflectInfoPass());
-    spvtools::OptimizerOptions options;
-    options.set_run_validator(false);
-    if (!opt.Run(binary, size, &shader, options)) {
-        ERROR("Error while running 'CreateVkspReflectInfoPass' and 'CreateStripReflectInfoPass'");
-        return false;
-    }
-
-    if (gVerbose) {
-        spv_text text;
-        spv_diagnostic diag;
-        spv_result_t spv_result = spvBinaryToText(context, shader.data(), shader.size(),
-            SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES
-                | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
-            &text, &diag);
-        if (spv_result == SPV_SUCCESS) {
-            PRINT("Shader:\n%s", text->str);
-            spvTextDestroy(text);
-        } else {
-            ERROR("Could not convert shader from binary to text: %s", diag->error);
-            spvDiagnosticDestroy(diag);
+    VkMemoryRequirements memreqs;
+    vkGetBufferMemoryRequirements(device, buffer, &memreqs);
+    bool memoryTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
+        bool valid = (1ULL << i) & memreqs.memoryTypeBits;
+        auto required_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool satisfactory = (dev_properties & required_properties) == required_properties;
+        if (satisfactory && valid) {
+            ds.buffer.memoryType = i;
+            memoryTypeFound = true;
+            break;
         }
     }
+    CHECK(memoryTypeFound, "Could not find memoryType for initialization buffer");
 
-    spvContextDestroy(context);
+    const VkMemoryAllocateInfo pAllocateInfo = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        ds.buffer.memorySize,
+        ds.buffer.memoryType,
+    };
+    res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    CHECK_VK(res, "Could not allocate memory for initialization buffer");
+    gMemories.push_back(memory);
 
-    return true;
+    res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
+    CHECK_VK(res, "Could not bind buffer memory for initialization buffer");
+
+    return 0;
+}
+
+static uint32_t initialize_buffer(VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkBuffer shaderBuffer)
+{
+    if (gBuffersMap == nullptr) {
+        return 0;
+    }
+    uint32_t dstSet = ds.ds;
+    uint32_t dstBinding = ds.binding;
+    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
+    auto find = gBuffersMap->find(key);
+    if (find == gBuffersMap->end()) {
+        return 0;
+    }
+    void *buffer_data = find->second.second;
+    CHECK(find->second.first == ds.buffer.memorySize, "mismatch in memorySize during initialization buffer");
+
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+    CHECK(allocate_buffer(device, memProperties, ds, buffer, memory) == 0, "Could not allocate initialization buffer");
+
+    void *memory_data;
+    VkResult res = vkMapMemory(device, memory, 0, ds.buffer.memorySize, 0, &memory_data);
+    CHECK_VK(res, "Could not map memory for initialization buffer");
+    memcpy(memory_data, buffer_data, ds.buffer.memorySize);
+    vkUnmapMemory(device, memory);
+
+    const VkBufferCopy pRegion = { 0, 0, ds.buffer.size };
+    vkCmdCopyBuffer(cmdBuffer, buffer, shaderBuffer, 1, &pRegion);
+
+    return 0;
 }
 
 static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
@@ -283,6 +301,11 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     res = vkCreateBuffer(device, &pCreateInfo, nullptr, &buffer);
     CHECK_VK(res, "Could not create buffer");
     gBuffers.push_back(buffer);
+
+    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
+        gOutputBuffer = buffer;
+        gOutputDsPtr = &ds;
+    }
 
     if (bCounter) {
         VkMemoryRequirements memreqs;
@@ -318,6 +341,9 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     res = vkBindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     CHECK_VK(res, "Could not bind buffer and memory");
 
+    CHECK(
+        initialize_buffer(device, cmdBuffer, memProperties, ds, buffer) == 0, "Could not initialize memory for buffer");
+
     const VkDescriptorBufferInfo bufferInfo = { buffer, ds.buffer.offset, ds.buffer.range };
     const VkWriteDescriptorSet write = {
         VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -341,6 +367,110 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     return 0;
 }
 
+static uint32_t allocate_image(VkDevice device, VkPhysicalDeviceMemoryProperties &memProperties,
+    vksp::vksp_descriptor_set &ds, VkImage &image, VkDeviceMemory &memory)
+{
+    VkExtent3D extent = { ds.image.width, ds.image.height, ds.image.depth };
+    const VkImageCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, nullptr, ds.image.imageFlags,
+        (VkImageType)ds.image.imageType, (VkFormat)ds.image.format, extent, ds.image.mipLevels, ds.image.arrayLayers,
+        (VkSampleCountFlagBits)ds.image.samples, (VkImageTiling)ds.image.tiling, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        VK_SHARING_MODE_EXCLUSIVE, 0, nullptr, (VkImageLayout)ds.image.initialLayout };
+
+    VkResult res = vkCreateImage(device, &pCreateInfo, nullptr, &image);
+    CHECK_VK(res, "Could not create initialization image");
+    gImages.push_back(image);
+
+    VkMemoryRequirements memreqs;
+    vkGetImageMemoryRequirements(device, image, &memreqs);
+    bool memoryTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
+        bool valid = (1ULL << i) & memreqs.memoryTypeBits;
+        auto required_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool satisfactory = (dev_properties & required_properties) == required_properties;
+        if (satisfactory && valid) {
+            ds.image.memoryType = i;
+            memoryTypeFound = true;
+            break;
+        }
+    }
+    CHECK(memoryTypeFound, "Could not find memoryType for initialization image");
+
+    const VkMemoryAllocateInfo pAllocateInfo = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        ds.image.memorySize,
+        ds.image.memoryType,
+    };
+
+    res = vkAllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    CHECK_VK(res, "Could not allocate memory for initialization image");
+    gMemories.push_back(memory);
+
+    res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
+    CHECK_VK(res, "Could not bind memory for initialization image");
+
+    return 0;
+}
+
+static uint32_t initialize_image(VkDevice device, VkCommandBuffer cmdBuffer,
+    VkPhysicalDeviceMemoryProperties &memProperties, vksp::vksp_descriptor_set &ds, VkImage shaderImage,
+    VkImageSubresourceRange &subresourceRange)
+{
+    if (gBuffersMap == nullptr) {
+        return 0;
+    }
+    uint32_t dstSet = ds.ds;
+    uint32_t dstBinding = ds.binding;
+    vksp::buffer_map_key key = std::make_pair(dstSet, dstBinding);
+    auto find = gBuffersMap->find(key);
+    if (find == gBuffersMap->end()) {
+        return 0;
+    }
+    void *image_data = find->second.second;
+    CHECK(find->second.first == ds.image.memorySize, "mismatch in memorySize during initialization buffer");
+
+    VkImage image;
+    VkDeviceMemory memory;
+    CHECK(allocate_image(device, memProperties, ds, image, memory) == 0, "Could not allocate initialization image");
+
+    void *memory_data;
+    VkResult res = vkMapMemory(device, memory, 0, ds.image.memorySize, 0, &memory_data);
+    CHECK_VK(res, "Could not map memory for initialization image");
+    memcpy(memory_data, image_data, ds.image.memorySize);
+    vkUnmapMemory(device, memory);
+
+    VkImageMemoryBarrier imageBarrier = {
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        nullptr,
+        0,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        (VkImageLayout)ds.image.initialLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        0,
+        0,
+        image,
+        subresourceRange,
+    };
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+        nullptr, 0, nullptr, 1, &imageBarrier);
+
+    const VkImageCopy pRegion = {
+        .srcSubresource
+        = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+        .srcOffset = { 0, 0, 0 },
+        .dstSubresource
+        = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+        .dstOffset = { 0, 0, 0 },
+        .extent = { ds.image.width, ds.image.height, ds.image.depth },
+    };
+
+    vkCmdCopyImage(
+        cmdBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, shaderImage, VK_IMAGE_LAYOUT_GENERAL, 1, &pRegion);
+
+    return 0;
+}
+
 static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDevice device, VkCommandBuffer cmdBuffer,
     VkPhysicalDeviceMemoryProperties &memProperties, std::vector<VkDescriptorSet> &descSet)
 {
@@ -357,6 +487,11 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     CHECK_VK(res, "Could not create image");
     gImages.push_back(image);
 
+    if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
+        gOutputImage = image;
+        gOutputDsPtr = &ds;
+    }
+
     const VkMemoryAllocateInfo pAllocateInfo = {
         VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         nullptr,
@@ -372,12 +507,38 @@ static uint32_t handle_descriptor_set_image(vksp::vksp_descriptor_set &ds, VkDev
     res = vkBindImageMemory(device, image, memory, ds.image.bindOffset);
     CHECK_VK(res, "Could not bind image and memory");
 
+    VkImageSubresourceRange subresourceRange = { ds.image.aspectMask, ds.image.baseMipLevel, ds.image.levelCount,
+        ds.image.baseArrayLayer, ds.image.layerCount };
+
+    VkImageMemoryBarrier imageBarrier = {
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        nullptr,
+        0,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        (VkImageLayout)ds.image.initialLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        0,
+        0,
+        image,
+        subresourceRange,
+    };
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+        nullptr, 0, nullptr, 1, &imageBarrier);
+
+    CHECK(initialize_image(device, cmdBuffer, memProperties, ds, image, subresourceRange) == 0,
+        "Could not initalize memory for image");
+
+    imageBarrier.srcAccessMask = imageBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+        nullptr, 0, nullptr, 1, &imageBarrier);
+
     VkImageView image_view;
     VkComponentMapping components
         = { (VkComponentSwizzle)ds.image.component_r, (VkComponentSwizzle)ds.image.component_g,
               (VkComponentSwizzle)ds.image.component_b, (VkComponentSwizzle)ds.image.component_a };
-    VkImageSubresourceRange subresourceRange = { ds.image.aspectMask, ds.image.baseMipLevel, ds.image.levelCount,
-        ds.image.baseArrayLayer, ds.image.layerCount };
     const VkImageViewCreateInfo pViewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, nullptr, ds.image.viewFlags,
         image, (VkImageViewType)ds.image.viewType, (VkFormat)ds.image.viewFormat, components, subresourceRange };
     res = vkCreateImageView(device, &pViewInfo, nullptr, &image_view);
@@ -631,9 +792,87 @@ static uint32_t counters_size(std::vector<vksp::vksp_counter> &counters)
     return sizeof(uint64_t) * (2 + counters.size());
 }
 
+static uint32_t record_dump_output(
+    VkDevice device, VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties)
+{
+    switch (gOutputDsPtr->type) {
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+        VkBuffer buffer;
+        CHECK(allocate_buffer(device, memProperties, *gOutputDsPtr, buffer, gOutputMemory) == 0,
+            "Could not allocate output buffer");
+        gOutputMemorySize = gOutputDsPtr->buffer.memorySize;
+
+        const VkBufferCopy pRegion = { 0, 0, gOutputDsPtr->buffer.size };
+        vkCmdCopyBuffer(cmdBuffer, gOutputBuffer, buffer, 1, &pRegion);
+    } break;
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+        VkImage image;
+        CHECK(allocate_image(device, memProperties, *gOutputDsPtr, image, gOutputMemory) == 0,
+            "Could not allocate output image");
+        gOutputMemorySize = gOutputDsPtr->image.memorySize;
+
+        VkImageSubresourceRange subresourceRange = { gOutputDsPtr->image.aspectMask, gOutputDsPtr->image.baseMipLevel,
+            gOutputDsPtr->image.levelCount, gOutputDsPtr->image.baseArrayLayer, gOutputDsPtr->image.layerCount };
+
+        VkImageMemoryBarrier imageBarrier = {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            nullptr,
+            0,
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            0,
+            0,
+            image,
+            subresourceRange,
+        };
+        vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+            nullptr, 0, nullptr, 1, &imageBarrier);
+
+        const VkImageCopy pRegion = {
+            .srcSubresource
+            = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+            .srcOffset = { 0, 0, 0 },
+            .dstSubresource
+            = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+            .dstOffset = { 0, 0, 0 },
+            .extent = { gOutputDsPtr->image.width, gOutputDsPtr->image.height, gOutputDsPtr->image.depth },
+        };
+
+        vkCmdCopyImage(
+            cmdBuffer, gOutputImage, VK_IMAGE_LAYOUT_GENERAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &pRegion);
+    } break;
+    default:
+        PRINT("Unsupported descritpor set type");
+        return -1;
+    }
+    return 0;
+}
+
+static uint32_t dump_output(VkDevice device)
+{
+    void *data;
+    VkResult res = vkMapMemory(device, gOutputMemory, 0, gOutputMemorySize, 0, &data);
+    CHECK_VK(res, "Could not map output memory");
+
+    std::string filename(gInput);
+    filename += "." + gOutputString + ".buffer";
+    FILE *fd = fopen(filename.c_str(), "w");
+    size_t byte_written = 0;
+    while (byte_written != gOutputMemorySize) {
+        byte_written += fwrite(&(((char *)data)[byte_written]), sizeof(char), gOutputMemorySize - byte_written, fd);
+    }
+    fclose(fd);
+
+    vkUnmapMemory(device, gOutputMemory);
+    return 0;
+}
+
 static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queue, vksp::vksp_configuration &config,
     std::vector<vksp::vksp_counter> &counters, uint64_t *gpu_timestamps,
-    std::chrono::steady_clock::time_point *host_timestamps)
+    std::chrono::steady_clock::time_point *host_timestamps, VkPhysicalDeviceMemoryProperties &memProperties)
 {
     VkResult res;
 
@@ -652,8 +891,14 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
     vkCmdResetQueryPool(cmdBuffer, queryPool, 0, gNbGpuTimestamps);
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 0);
 
+    VkMemoryBarrier memoryBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT };
+
     for (unsigned i = 0; i < gColdRun; i++) {
         vkCmdDispatch(cmdBuffer, config.groupCountX, config.groupCountY, config.groupCountZ);
+        vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+            &memoryBarrier, 0, nullptr, 0, nullptr);
     }
 
     if (gCounterBuffer != VK_NULL_HANDLE) {
@@ -666,8 +911,15 @@ static uint32_t execute(VkDevice device, VkCommandBuffer cmdBuffer, VkQueue queu
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 1);
     for (unsigned i = 0; i < gHotRun; i++) {
         vkCmdDispatch(cmdBuffer, config.groupCountX, config.groupCountY, config.groupCountZ);
+        vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+            &memoryBarrier, 0, nullptr, 0, nullptr);
     }
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, 2);
+
+    if (gOutputDsPtr != nullptr) {
+        CHECK(record_dump_output(device, cmdBuffer, memProperties) == 0, "Could not record dumping of output");
+    }
 
     res = vkEndCommandBuffer(cmdBuffer);
     CHECK_VK(res, "Could not end command buffer");
@@ -825,11 +1077,13 @@ static void help()
     printf("USAGE: vulkan-shader-profiler-runner [OPTIONS] -i <input>\n"
            "\n"
            "OPTIONS:\n"
+           "\t-b\tBuffers file associated to the input generated when tracing\n"
            "\t-c\tDisable counters\n"
            "\t-e\tspv_target_env to use (default: vulkan1.3)\n"
            "\t-h\tDisplay this help and exit\n"
            "\t-m\tNumber of cold run\n"
            "\t-n\tNumber of hot run\n"
+           "\t-o\tDescriptor set index and binding of a buffer to dump after the execution (example: '1.2')\n"
            "\t-p\tGlobal priority (0:low 1:medium 2:high 3:realtime default:unspecified)\n"
            "\t-v\tVerbose mode\n");
 }
@@ -838,8 +1092,11 @@ static bool parse_args(int argc, char **argv)
 {
     bool bHelp = false;
     int c;
-    while ((c = getopt(argc, argv, "chvi:n:m:e:p:")) != -1) {
+    while ((c = getopt(argc, argv, "chvi:n:m:e:p:b:o:")) != -1) {
         switch (c) {
+        case 'b':
+            gBuffersInput = std::string(optarg);
+            break;
         case 'c':
             gDisableCounters = true;
             break;
@@ -858,6 +1115,17 @@ static bool parse_args(int argc, char **argv)
         case 'm':
             gColdRun = atoi(optarg);
             break;
+        case 'o': {
+            gOutputString = std::string(optarg);
+            auto splits = split_string(gOutputString, ".");
+            if (splits.size() == 2) {
+                gOutputDs = atoi(splits[0]);
+                gOutputBinding = atoi(splits[1]);
+            } else {
+                ERROR("'%s' does not match output (expected: 'ds.binding')", gOutputString.c_str());
+                bHelp = true;
+            }
+        } break;
         case 'p':
             gPriority = atoi(optarg);
             break;
@@ -889,8 +1157,10 @@ int main(int argc, char **argv)
     if (!parse_args(argc, argv)) {
         return -1;
     }
-    PRINT("Arguments parsed: input '%s' verbose '%u' spv_target_env '%s' hot_runs '%u' cold_runs '%u'", gInput.c_str(),
-        gVerbose, spvTargetEnvDescription(gSpvTargetEnv), gHotRun, gColdRun);
+    PRINT("Arguments parsed: input '%s' verbose '%u' spv_target_env '%s' hot_runs '%u' cold_runs '%u' buffers '%s' "
+          "output_ds '%u' output_binding '%u' counters '%u' priority '%u'",
+        gInput.c_str(), gVerbose, spvTargetEnvDescription(gSpvTargetEnv), gHotRun, gColdRun, gBuffersInput.c_str(),
+        gOutputDs, gOutputBinding, gDisableCounters, gPriority);
 
     std::vector<uint32_t> shader;
     std::vector<vksp::vksp_descriptor_set> dsVector;
@@ -898,7 +1168,8 @@ int main(int argc, char **argv)
     std::vector<vksp::vksp_specialization_map_entry> meVector;
     std::vector<vksp::vksp_counter> counters;
     vksp::vksp_configuration config;
-    CHECK(extract_from_input(shader, dsVector, pcVector, meVector, counters, config),
+    CHECK(extract_from_input(gInput.c_str(), gSpvTargetEnv, gDisableCounters, gVerbose, shader, dsVector, pcVector,
+              meVector, counters, config),
         "Could not extract data from input");
     PRINT("Shader name: '%s'", config.shaderName);
     PRINT("Entry point: '%s'", config.entryPoint);
@@ -922,6 +1193,13 @@ int main(int argc, char **argv)
     CHECK(allocate_descriptor_set(device, descSet, dsVector, descSetLayoutVector) == 0,
         "Could not allocate descriptor set");
     PRINT("Descriptor set allocated");
+
+    if (gBuffersInput != "") {
+        gBuffersContents = std::make_unique<vksp::BuffersFile>(config.dispatchId);
+        if (gBuffersContents->ReadFromFile(gBuffersInput.c_str())) {
+            gBuffersMap = gBuffersContents->GetBuffers();
+        }
+    }
 
     for (auto &ds : dsVector) {
         switch (ds.type) {
@@ -1012,12 +1290,16 @@ int main(int argc, char **argv)
 
     uint64_t gpu_timestamps[gNbGpuTimestamps];
     std::chrono::steady_clock::time_point host_timestamps[3];
-    CHECK(
-        execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps) == 0, "Could not execute");
+    CHECK(execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps, memProperties) == 0,
+        "Could not execute");
     PRINT("Execution completed");
 
     CHECK(print_results(pDevice, device, config, counters, gpu_timestamps, host_timestamps) == 0,
         "Could not print all results");
+
+    if (gOutputDsPtr != nullptr) {
+        CHECK(dump_output(device) == 0, "Could not dump output memory");
+    }
 
     clean_vk_objects(device, cmdBuffer, descSet, descSetLayoutVector, pipelineLayout, pipeline);
 

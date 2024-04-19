@@ -17,6 +17,12 @@
 
 #include "spirv-tools/libspirv.h"
 
+static bool gVerbose = true;
+
+#include "common/buffers_file.hpp"
+#include "common/common.hpp"
+#include "common/spirv-extract.hpp"
+
 #include <condition_variable>
 #include <filesystem>
 #include <perfetto.h>
@@ -62,9 +68,10 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
 
 #define DISPATCH_TABLE_ELEMENT(func) PFN_vk##func func;
 
-#define PRINT(message, ...)                                                                                            \
+#undef PRINT_IMPL
+#define PRINT_IMPL(file, message, ...)                                                                                 \
     do {                                                                                                               \
-        fprintf(stderr, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                          \
+        fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
         TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "PRINT", "message", perfetto::DynamicString(message));             \
     } while (0)
 
@@ -131,6 +138,8 @@ static std::map<VkCommandBuffer, VkPipeline> CmdBufferToPipeline;
 static std::map<VkPipeline, VkShaderModule> PipelineToShaderModule;
 static std::map<VkPipeline, std::string> PipelineToShaderModuleName;
 static std::map<VkShaderModule, std::string> ShaderModuleToString;
+static std::map<VkImageView, VkImage> ImageViewToImage;
+static std::map<uint32_t, void *> DstSetIndexToPtr;
 
 struct ThreadDispatch {
     VkQueryPool query_pool;
@@ -221,6 +230,368 @@ static void update_block_size()
 {
     if (auto block_size = getenv("VKSP_SHADER_TEXT_BLOCK_SIZE")) {
         gBlockSize = atoi(block_size);
+    }
+}
+
+/*****************************************************************************/
+/* EXTRACT BUFFERS ***********************************************************/
+/*****************************************************************************/
+
+typedef struct DescriptorSetUpdated_ {
+    VkDescriptorType descriptorType;
+    union {
+        struct {
+            VkBuffer buffer;
+            VkDeviceSize size;
+            VkDeviceSize offset;
+        };
+        struct {
+            VkImage image;
+            VkImageLayout layout;
+            uint32_t width;
+            uint32_t height;
+            uint32_t depth;
+        };
+    };
+} DescriptorSetUpdated;
+
+static std::map<std::pair<void *, uint32_t>, DescriptorSetUpdated> DescriptorSetsUpdated;
+
+typedef struct DescriptorSetExtracted_ {
+    DescriptorSetUpdated object;
+    uint32_t dstSet;
+    uint32_t dstBinding;
+    VkDeviceMemory memory;
+    VkDeviceSize size;
+} DescriptorSetExtracted;
+std::vector<DescriptorSetExtracted> DescriptorSetsExtracted;
+
+std::vector<vksp::vksp_descriptor_set> DescriptorSetsToExtract;
+vksp::vksp_configuration vksp_config;
+uint64_t DispatchIdToExtract = UINT64_MAX;
+char *extract_buffers_from_filename = nullptr;
+std::condition_variable DispatchIdCond;
+
+static bool allocate_buffer(
+    vksp::vksp_descriptor_set &ds, VkDevice device, VkPhysicalDeviceMemoryProperties &memProperties)
+{
+    VkBuffer buffer;
+    const VkBufferCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, ds.buffer.size,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr };
+
+    VkResult res = gdispatch[device].CreateBuffer(device, &pCreateInfo, nullptr, &buffer);
+    if (res != VK_SUCCESS) {
+        PRINT("Could not create buffer (%u)", res);
+        return false;
+    }
+
+    VkMemoryRequirements memreqs;
+    gdispatch[device].GetBufferMemoryRequirements(device, buffer, &memreqs);
+    bool memoryTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
+        bool valid = (1ULL << i) & memreqs.memoryTypeBits;
+        auto required_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool satisfactory = (dev_properties & required_properties) == required_properties;
+        if (satisfactory && valid) {
+            ds.buffer.memoryType = i;
+            memoryTypeFound = true;
+            break;
+        }
+    }
+    if (!memoryTypeFound) {
+        PRINT("Could not find a memoryType for buffer");
+        return false;
+    }
+
+    const VkMemoryAllocateInfo pAllocateInfo = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        ds.buffer.memorySize,
+        ds.buffer.memoryType,
+    };
+    VkDeviceMemory memory;
+    res = gdispatch[device].AllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    if (res != VK_SUCCESS) {
+        PRINT("Could not allocate memory (%u)", res);
+        return false;
+    }
+
+    res = gdispatch[device].BindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
+    if (res != VK_SUCCESS) {
+        PRINT("Could not bind buffer memory (%u)", res);
+        return false;
+    }
+
+    DescriptorSetExtracted dsExtracted = {
+        .object = { .descriptorType = (VkDescriptorType)ds.type, .buffer = buffer, },
+        .dstSet = ds.ds,
+        .dstBinding = ds.binding,
+        .memory = memory,
+        .size = ds.buffer.memorySize,
+    };
+    DescriptorSetsExtracted.push_back(dsExtracted);
+
+    return true;
+}
+
+static bool allocate_image(
+    vksp::vksp_descriptor_set &ds, VkDevice device, VkPhysicalDeviceMemoryProperties &memProperties)
+{
+    VkImage image;
+    VkExtent3D extent = { ds.image.width, ds.image.height, ds.image.depth };
+    const VkImageCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, nullptr, ds.image.imageFlags,
+        (VkImageType)ds.image.imageType, (VkFormat)ds.image.format, extent, ds.image.mipLevels, ds.image.arrayLayers,
+        (VkSampleCountFlagBits)ds.image.samples, (VkImageTiling)ds.image.tiling, VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        VK_SHARING_MODE_EXCLUSIVE, 0, nullptr, (VkImageLayout)ds.image.initialLayout };
+
+    VkResult res = gdispatch[device].CreateImage(device, &pCreateInfo, nullptr, &image);
+    if (res != VK_SUCCESS) {
+        PRINT("Could not create image (%u)", res);
+        return false;
+    }
+
+    VkMemoryRequirements memreqs;
+    gdispatch[device].GetImageMemoryRequirements(device, image, &memreqs);
+    bool memoryTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
+        bool valid = (1ULL << i) & memreqs.memoryTypeBits;
+        auto required_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool satisfactory = (dev_properties & required_properties) == required_properties;
+        if (satisfactory && valid) {
+            ds.image.memoryType = i;
+            memoryTypeFound = true;
+            break;
+        }
+    }
+    if (!memoryTypeFound) {
+        PRINT("Could not find a memoryType for image");
+        return false;
+    }
+
+    const VkMemoryAllocateInfo pAllocateInfo = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        std::max(ds.image.memorySize, (uint32_t)memreqs.size),
+        ds.image.memoryType,
+    };
+
+    VkDeviceMemory memory;
+    res = gdispatch[device].AllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    if (res != VK_SUCCESS) {
+        PRINT("Could not allocate memory (%u)", res);
+        return false;
+    }
+
+    res = gdispatch[device].BindImageMemory(device, image, memory, ds.image.bindOffset);
+    if (res != VK_SUCCESS) {
+        PRINT("Could not bind image memory (%u)", res);
+        return false;
+    }
+
+    DescriptorSetExtracted dsExtracted = {
+        .object = { .descriptorType = (VkDescriptorType)ds.type,
+            .image = image,
+            .layout = (VkImageLayout)ds.image.initialLayout,
+            .width = ds.image.width,
+            .height = ds.image.height,
+            .depth = ds.image.depth,
+        },
+        .dstSet = ds.ds,
+        .dstBinding = ds.binding,
+        .memory = memory,
+        .size = ds.image.memorySize,
+    };
+    DescriptorSetsExtracted.push_back(dsExtracted);
+
+    return true;
+}
+
+static void extract_buffers_setup(VkDevice device, VkPhysicalDevice pDevice)
+{
+    if (DispatchIdToExtract != UINT64_MAX) {
+        PRINT("already been called, but is called a second time, ignoring");
+        return;
+    }
+    extract_buffers_from_filename = getenv("VKSP_EXTRACT_BUFFERS_FROM");
+    if (extract_buffers_from_filename == nullptr) {
+        return;
+    }
+    if (access(extract_buffers_from_filename, F_OK)) {
+        PRINT("Could not find file '%s' from which to extract buffers", extract_buffers_from_filename);
+        return;
+    }
+    VkPhysicalDeviceMemoryProperties memProperties;
+    gdispatch[PhysicalDeviceToInstance[pDevice]].GetPhysicalDeviceMemoryProperties(pDevice, &memProperties);
+
+    std::vector<uint32_t> shader;
+    std::vector<vksp::vksp_push_constant> pc;
+    std::vector<vksp::vksp_specialization_map_entry> me;
+    std::vector<vksp::vksp_counter> counters;
+    spv_target_env spv_env = SPV_ENV_VULKAN_1_3;
+    if (!vksp::extract_from_input(extract_buffers_from_filename, spv_env, true, false, shader, DescriptorSetsToExtract,
+            pc, me, counters, vksp_config)) {
+        PRINT("Could not extract information from input");
+        return;
+    }
+    for (auto &ds : DescriptorSetsToExtract) {
+        switch (ds.type) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            if (!allocate_buffer(ds, device, memProperties)) {
+                return;
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            if (!allocate_image(ds, device, memProperties)) {
+                return;
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+            break;
+        default:
+            PRINT("unsupported descriptor set type (%u)", ds.type);
+            break;
+        }
+    }
+    DispatchIdToExtract = vksp_config.dispatchId;
+}
+
+static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
+{
+    VkMemoryBarrier memoryBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT };
+    gdispatch[device].CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+        &memoryBarrier, 0, nullptr, 0, nullptr);
+
+    for (auto &ds : DescriptorSetsExtracted) {
+        auto dstSet = ds.dstSet;
+        auto dstSetFind = DstSetIndexToPtr.find(dstSet);
+        if (dstSetFind == DstSetIndexToPtr.end()) {
+            PRINT("Could not find dstSet pointer for '%u'", dstSet);
+            continue;
+        }
+        auto pair = std::make_pair(dstSetFind->second, ds.dstBinding);
+        auto dsUpdatedFind = DescriptorSetsUpdated.find(pair);
+        if (dsUpdatedFind == DescriptorSetsUpdated.end()) {
+            PRINT("Could not find pair (%u, %u)", dstSet, ds.dstBinding);
+            continue;
+        }
+        if (dsUpdatedFind->second.descriptorType != ds.object.descriptorType) {
+            PRINT("Found object does not match (expected %u, got %u)", ds.object.descriptorType,
+                dsUpdatedFind->second.descriptorType);
+            continue;
+        }
+        switch (ds.object.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+            auto offset = dsUpdatedFind->second.offset;
+            auto range = dsUpdatedFind->second.size;
+            if (ds.size < offset + range) {
+                PRINT("buffer size (%lu) is smaller than found buffer offset (%lu) + range (%lu)", ds.size, offset,
+                    range);
+                continue;
+            }
+            const VkBufferCopy pRegion = { offset, offset, range };
+            gdispatch[device].CmdCopyBuffer(commandBuffer, dsUpdatedFind->second.buffer, ds.object.buffer, 1, &pRegion);
+        } break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+            VkImageSubresourceRange subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .baseArrayLayer = 0,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS,
+            };
+
+            VkImageMemoryBarrier imageBarrier = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                nullptr,
+                0,
+                VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                ds.object.layout,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                0,
+                0,
+                ds.object.image,
+                subresourceRange,
+            };
+            gdispatch[device].CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+            const VkImageCopy pRegion = {
+                .srcSubresource
+                = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+                .srcOffset = { 0, 0, 0 },
+                .dstSubresource
+                = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+                .dstOffset = { 0, 0, 0 },
+                .extent = { ds.object.width, ds.object.height, ds.object.depth },
+            };
+            gdispatch[device].CmdCopyImage(commandBuffer, dsUpdatedFind->second.image, dsUpdatedFind->second.layout,
+                ds.object.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &pRegion);
+        } break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+            break;
+        default:
+            PRINT("unsupported descriptor set type (%u)", ds.object.descriptorType);
+            break;
+        }
+    }
+}
+
+static void extract_buffers_create_file(VkDevice device)
+{
+    vksp::BuffersFile buffers_file(DispatchIdToExtract);
+    for (auto &ds : DescriptorSetsExtracted) {
+        void *data;
+        VkResult res = gdispatch[device].MapMemory(device, ds.memory, 0, ds.size, 0, &data);
+        if (res != VK_SUCCESS) {
+            PRINT("Could not map memory for (%u, %u) (%u)", ds.dstSet, ds.dstBinding, res);
+            continue;
+        }
+        buffers_file.AddBuffer(ds.dstSet, ds.dstBinding, (uint32_t)ds.size, data);
+    }
+
+    std::string buffers_filename(extract_buffers_from_filename);
+    buffers_filename += ".buffers";
+    if (!buffers_file.WriteToFile(buffers_filename.c_str())) {
+        PRINT("Could not write buffers to file");
+        return;
+    }
+
+    for (auto &ds : DescriptorSetsExtracted) {
+        gdispatch[device].UnmapMemory(device, ds.memory);
+    }
+
+    std::lock_guard<std::mutex> lock(glock);
+    DispatchIdToExtract = UINT64_MAX;
+    DispatchIdCond.notify_all();
+}
+
+static void extract_buffers_clean(VkDevice device)
+{
+    for (auto &ds : DescriptorSetsExtracted) {
+        switch (ds.object.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+            gdispatch[device].DestroyBuffer(device, ds.object.buffer, nullptr);
+            gdispatch[device].FreeMemory(device, ds.memory, nullptr);
+        } break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+            gdispatch[device].DestroyImage(device, ds.object.image, nullptr);
+            gdispatch[device].FreeMemory(device, ds.memory, nullptr);
+        } break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+            break;
+        default:
+            PRINT("unsupported descriptor set type (%u)", ds.object.descriptorType);
+            break;
+        }
     }
 }
 
@@ -339,6 +710,10 @@ static void GenerateTrace(ThreadInfo *info, ThreadDispatch &cmd)
         "dispatchId", cmd.dispatchId, "shader", ShaderModuleToString[PipelineToShaderModule[cmd.pipeline]],
         "shader_name", PipelineToShaderModuleName[cmd.pipeline]);
     TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY, perfetto::Track((uintptr_t)info->queue), (uint64_t)end);
+
+    if (cmd.dispatchId == DispatchIdToExtract) {
+        extract_buffers_create_file(info->device);
+    }
 }
 
 static void QueueThreadFct(ThreadInfo *info)
@@ -515,8 +890,30 @@ void VKAPI_CALL vksp_CmdDispatch(
         (void *)commandBuffer, "groupCountX", groupCountX, "groupCountY", groupCountY, "groupCountZ", groupCountZ,
         "dispatchId", dispatchId);
 
+    VkPipeline pipeline = CmdBufferToPipeline[commandBuffer];
+    if (dispatchId == DispatchIdToExtract) {
+        auto vkspName = ShaderModuleToString[PipelineToShaderModule[pipeline]];
+        auto moduleName = PipelineToShaderModuleName[pipeline];
+        if (strcmp(moduleName.c_str(), vksp_config.entryPoint) != 0) {
+            PRINT("dispatchIdToExtract: entryPoint differs: '%s' != '%s'", moduleName.c_str(), vksp_config.entryPoint);
+        }
+        if (strcmp(vkspName.c_str(), vksp_config.shaderName) != 0) {
+            PRINT("dispatchIdToExtract: vkspName differs: '%s' != '%s'", vkspName.c_str(), vksp_config.shaderName);
+        }
+        if (groupCountX != vksp_config.groupCountX) {
+            PRINT("dispatchIdToExtract: groupCountX differs: %u != %u", groupCountX, vksp_config.groupCountX);
+        }
+        if (groupCountY != vksp_config.groupCountY) {
+            PRINT("dispatchIdToExtract: groupCountY differs: %u != %u", groupCountY, vksp_config.groupCountY);
+        }
+        if (groupCountZ != vksp_config.groupCountZ) {
+            PRINT("dispatchIdToExtract: groupCountZ differs: %u != %u", groupCountZ, vksp_config.groupCountZ);
+        }
+        extract_buffers_copy(device, commandBuffer);
+    }
+
     ThreadDispatch dispatch = {
-        .pipeline = CmdBufferToPipeline[commandBuffer],
+        .pipeline = pipeline,
         .dispatchId = dispatchId++,
         .groupCountX = groupCountX,
         .groupCountY = groupCountY,
@@ -680,6 +1077,12 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
                 pDescriptorWrites[i].descriptorCount, "descriptorType", pDescriptorWrites[i].descriptorType, "buffer",
                 (void *)pDescriptorWrites[i].pBufferInfo->buffer, "offset", pDescriptorWrites[i].pBufferInfo->offset,
                 "range", pDescriptorWrites[i].pBufferInfo->range);
+            DescriptorSetsUpdated[std::make_pair(pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)] = {
+                .descriptorType = pDescriptorWrites[i].descriptorType,
+                .buffer = pDescriptorWrites[i].pBufferInfo->buffer,
+                .size = pDescriptorWrites[i].pBufferInfo->range,
+                .offset = pDescriptorWrites[i].pBufferInfo->offset,
+            };
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
@@ -688,6 +1091,11 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
                 pDescriptorWrites[i].descriptorCount, "descriptorType", (void *)pDescriptorWrites[i].descriptorType,
                 "imageLayout", pDescriptorWrites[i].pImageInfo->imageLayout, "imageView",
                 (void *)pDescriptorWrites[i].pImageInfo->imageView);
+            DescriptorSetsUpdated[std::make_pair(pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)] = {
+                .descriptorType = pDescriptorWrites[i].descriptorType,
+                .image = ImageViewToImage[pDescriptorWrites[i].pImageInfo->imageView],
+                .layout = pDescriptorWrites[i].pImageInfo->imageLayout,
+            };
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLER:
             TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
@@ -722,6 +1130,7 @@ void VKAPI_CALL vksp_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipe
         TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCmdBindDescriptorSets-ds", "commandBuffer",
             (void *)commandBuffer, "pipelineBindPoint", pipelineBindPoint, "firstSet", firstSet, "dstSet",
             (void *)pDescriptorSets[i], "index", i);
+        DstSetIndexToPtr[firstSet + i] = pDescriptorSets[i];
     }
 
     gdispatch[device].CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount,
@@ -790,6 +1199,8 @@ VkResult VKAPI_CALL vksp_CreateImageView(VkDevice device, const VkImageViewCreat
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImageView", "device", (void *)device);
 
     auto result = gdispatch[device].CreateImageView(device, pCreateInfo, pAllocator, pView);
+
+    ImageViewToImage[*pView] = pCreateInfo->image;
 
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateImageView-result", "pView", (void *)*pView, "image",
         (void *)pCreateInfo->image, "flags", pCreateInfo->flags, "format", pCreateInfo->format, "viewType",
@@ -990,10 +1401,15 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
         ppEnabledExtensionNames.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
     }
     ppEnabledExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+    ppEnabledExtensionNames.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 
     VkDeviceCreateInfo mCreateInfo = *pCreateInfo;
     mCreateInfo.enabledExtensionCount = ppEnabledExtensionNames.size();
     mCreateInfo.ppEnabledExtensionNames = ppEnabledExtensionNames.data();
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeature
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES, (void *)mCreateInfo.pNext, VK_TRUE };
+    mCreateInfo.pNext = &timelineSemaphoreFeature;
 
     VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
     if (ret != VK_SUCCESS) {
@@ -1012,12 +1428,20 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     gdispatch[*pDevice] = dispatchTable;
     DeviceToPhysicalDevice[*pDevice] = physicalDevice;
 
+    extract_buffers_setup(*pDevice, physicalDevice);
+
     return VK_SUCCESS;
 }
 
 void VKAPI_CALL vksp_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
 {
-    std::lock_guard<std::mutex> lock(glock);
+    std::unique_lock lock(glock);
+
+    while (DispatchIdToExtract != UINT64_MAX) {
+        DispatchIdCond.wait(lock);
+    }
+    extract_buffers_clean(device);
+
     for (auto &[queue, thread] : QueueThreadPool[device]) {
         auto info = QueueToThreadInfo[queue];
         {
