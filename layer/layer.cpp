@@ -1077,12 +1077,13 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
                 pDescriptorWrites[i].descriptorCount, "descriptorType", pDescriptorWrites[i].descriptorType, "buffer",
                 (void *)pDescriptorWrites[i].pBufferInfo->buffer, "offset", pDescriptorWrites[i].pBufferInfo->offset,
                 "range", pDescriptorWrites[i].pBufferInfo->range);
-            DescriptorSetsUpdated[std::make_pair(pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)] = {
-                .descriptorType = pDescriptorWrites[i].descriptorType,
-                .buffer = pDescriptorWrites[i].pBufferInfo->buffer,
-                .size = pDescriptorWrites[i].pBufferInfo->range,
-                .offset = pDescriptorWrites[i].pBufferInfo->offset,
-            };
+            DescriptorSetsUpdated[std::make_pair((void *)pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)]
+                = {
+                      .descriptorType = pDescriptorWrites[i].descriptorType,
+                      .buffer = pDescriptorWrites[i].pBufferInfo->buffer,
+                      .size = pDescriptorWrites[i].pBufferInfo->range,
+                      .offset = pDescriptorWrites[i].pBufferInfo->offset,
+                  };
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
@@ -1091,11 +1092,12 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
                 pDescriptorWrites[i].descriptorCount, "descriptorType", (void *)pDescriptorWrites[i].descriptorType,
                 "imageLayout", pDescriptorWrites[i].pImageInfo->imageLayout, "imageView",
                 (void *)pDescriptorWrites[i].pImageInfo->imageView);
-            DescriptorSetsUpdated[std::make_pair(pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)] = {
-                .descriptorType = pDescriptorWrites[i].descriptorType,
-                .image = ImageViewToImage[pDescriptorWrites[i].pImageInfo->imageView],
-                .layout = pDescriptorWrites[i].pImageInfo->imageLayout,
-            };
+            DescriptorSetsUpdated[std::make_pair((void *)pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)]
+                = {
+                      .descriptorType = pDescriptorWrites[i].descriptorType,
+                      .image = ImageViewToImage[pDescriptorWrites[i].pImageInfo->imageView],
+                      .layout = pDescriptorWrites[i].pImageInfo->imageLayout,
+                  };
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLER:
             TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
@@ -1130,7 +1132,7 @@ void VKAPI_CALL vksp_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipe
         TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCmdBindDescriptorSets-ds", "commandBuffer",
             (void *)commandBuffer, "pipelineBindPoint", pipelineBindPoint, "firstSet", firstSet, "dstSet",
             (void *)pDescriptorSets[i], "index", i);
-        DstSetIndexToPtr[firstSet + i] = pDescriptorSets[i];
+        DstSetIndexToPtr[firstSet + i] = (void *)pDescriptorSets[i];
     }
 
     gdispatch[device].CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount,
