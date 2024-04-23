@@ -1409,9 +1409,22 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     mCreateInfo.enabledExtensionCount = ppEnabledExtensionNames.size();
     mCreateInfo.ppEnabledExtensionNames = ppEnabledExtensionNames.data();
 
+    bool timelineSemaphoreFeaturePresent = false;
+    void *featureNext = (void *)mCreateInfo.pNext;
+    while (featureNext != nullptr) {
+        auto timelineSemaphore = (VkPhysicalDeviceTimelineSemaphoreFeatures *)featureNext;
+        if (timelineSemaphore->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES) {
+            timelineSemaphoreFeaturePresent = true;
+            break;
+        }
+        featureNext = timelineSemaphore->pNext;
+    }
+
     VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeature
         = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES, (void *)mCreateInfo.pNext, VK_TRUE };
-    mCreateInfo.pNext = &timelineSemaphoreFeature;
+    if (!timelineSemaphoreFeaturePresent) {
+        mCreateInfo.pNext = &timelineSemaphoreFeature;
+    }
 
     VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
     if (ret != VK_SUCCESS) {
