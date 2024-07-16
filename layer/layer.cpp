@@ -545,7 +545,8 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
 
 static void extract_buffers_create_file(VkDevice device)
 {
-    vksp::BuffersFile buffers_file(DispatchIdToExtract);
+    bool oneFile = getenv("VKSP_EXTRACT_MULTIPLE_BUFFERS") == nullptr;
+    vksp::BuffersFile buffers_file(DispatchIdToExtract, oneFile);
     for (auto &ds : DescriptorSetsExtracted) {
         void *data;
         VkResult res = gdispatch[device].MapMemory(device, ds.memory, 0, ds.size, 0, &data);
