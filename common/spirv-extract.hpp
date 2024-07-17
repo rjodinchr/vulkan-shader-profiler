@@ -224,6 +224,8 @@ private:
             ds.buffer.memorySize = inst->GetOperand(op_id++).words[0];
             ds.buffer.memoryType = inst->GetOperand(op_id++).words[0];
             ds.buffer.bindOffset = inst->GetOperand(op_id++).words[0];
+            ds.buffer.viewFlags = inst->GetOperand(op_id++).words[0];
+            ds.buffer.viewFormat = inst->GetOperand(op_id++).words[0];
             ds_->push_back(ds);
             descriptor_set_0_max_binding = UpdateMaxBinding(ds.ds, ds.binding, descriptor_set_0_max_binding);
         } break;

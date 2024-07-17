@@ -86,6 +86,8 @@ public:
 
         for (auto &ds : *ds_) {
             switch (ds.type) {
+            case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
             case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
                 auto DsInstId = context()->TakeNextId();
@@ -107,6 +109,8 @@ public:
                         { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.memorySize } },
                         { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.memoryType } },
                         { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.bindOffset } },
+                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.viewFlags } },
+                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.viewFormat } },
                     });
                 module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(DstInst));
             } break;
