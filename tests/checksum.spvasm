@@ -80,8 +80,8 @@
          %84 = OpExtInst %void %82 PushConstants 16 12 "000000000000000000000000" 32
          %85 = OpExtInst %void %82 PushConstants 32 4 "20000000" 32
          %86 = OpExtInst %void %82 PushConstants 0 12 "000000000000000000000000" 32
-         %87 = OpExtInst %void %82 DescriptorSetBuffer 0 0 7 0 0 0 4096 63 4096 0 4096 0 0
-         %88 = OpExtInst %void %82 DescriptorSetBuffer 0 1 7 0 0 0 128 63 128 0 128 0 0
+         %87 = OpExtInst %void %82 DescriptorSetBuffer 0 0 7 0 0 0 4096 63 4096 0 4096 0 0 0 0
+         %88 = OpExtInst %void %82 DescriptorSetBuffer 0 1 7 0 0 0 128 63 128 0 128 0 0 0 0
          %89 = OpExtInst %void %82 SpecializationMapEntry 0 0 4
          %90 = OpExtInst %void %82 SpecializationMapEntry 1 4 4
          %91 = OpExtInst %void %82 SpecializationMapEntry 2 8 4
