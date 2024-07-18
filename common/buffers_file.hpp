@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 
 namespace vksp {
 
@@ -28,9 +29,14 @@ using buffers_map = std::map<buffer_map_key, buffer_map_val>;
 class BuffersFile {
 public:
     BuffersFile(uint32_t dispatchId)
+        : BuffersFile(dispatchId, true)
+    {
+    }
+    BuffersFile(uint32_t dispatchId, bool oneFile)
         : m_version(1)
         , m_magic(0x766B7370) // VKSP in ASCII
         , m_dispatchId(dispatchId)
+        , m_oneFile(oneFile)
     {
     }
 
@@ -71,7 +77,33 @@ public:
         return true;
     }
 
-    bool WriteToFile(const char *filename)
+private:
+    bool WriteToMultipleFiles(const char *filename)
+    {
+        for (auto &buffer : m_buffers) {
+            std::string filename_str(filename);
+            uint32_t set = buffer.first.first;
+            uint32_t binding = buffer.first.second;
+            uint32_t size = buffer.second.first;
+            void *data = buffer.second.second;
+
+            filename_str += "." + std::to_string(set) + "." + std::to_string(binding);
+            FILE *fd = fopen(filename_str.c_str(), "w");
+            if (fd == nullptr) {
+                return false;
+            }
+
+            uint32_t byte_written = 0;
+            while (byte_written != size) {
+                byte_written += fwrite(&(((char *)data)[byte_written]), sizeof(char), size - byte_written, fd);
+            }
+
+            fclose(fd);
+        }
+        return true;
+    }
+
+    bool WriteToOneFile(const char *filename)
     {
         FILE *fd = fopen(filename, "w");
         if (fd == nullptr) {
@@ -114,6 +146,16 @@ public:
         return true;
     }
 
+public:
+    bool WriteToFile(const char *filename)
+    {
+        if (m_oneFile) {
+            return WriteToOneFile(filename);
+        } else {
+            return WriteToMultipleFiles(filename);
+        }
+    }
+
     void AddBuffer(uint32_t set, uint32_t binding, uint32_t size, void *data)
     {
         buffer_map_key key = std::make_pair(set, binding);
@@ -128,5 +170,6 @@ private:
     const uint32_t m_magic;
     const uint32_t m_dispatchId;
     buffers_map m_buffers;
+    bool m_oneFile;
 };
 }

@@ -254,9 +254,36 @@ bool get_buffer_descriptor_set(
     TraceProcessor *tp, uint64_t write_arg_set_id, uint64_t write_timestamp, vksp::vksp_descriptor_set &ds)
 {
     uint64_t buffer;
-    GET_INT_VALUE(tp, write_arg_set_id, "debug.buffer", buffer);
-    GET_INT_VALUE(tp, write_arg_set_id, "debug.range", ds.buffer.range);
-    GET_INT_VALUE(tp, write_arg_set_id, "debug.offset", ds.buffer.offset);
+    switch (ds.type) {
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: {
+        uint64_t buffer_view;
+        GET_INT_VALUE(tp, write_arg_set_id, "debug.bufferView", buffer_view);
+
+        std::string query_buffer_view
+            = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateBufferView-result' AND slice.ts < "
+            + std::to_string(write_timestamp) + " AND " + std::to_string(buffer_view)
+            + "= (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pView')";
+        EXECUTE_QUERY(it_buffer_view, tp, query_buffer_view);
+        uint64_t buffer_view_id = it_buffer_view.Get(0).AsLong();
+        assert(!it_buffer_view.Next());
+
+        GET_INT_VALUE(tp, buffer_view_id, "debug.buffer", buffer);
+        GET_INT_VALUE(tp, buffer_view_id, "debug.flags", ds.buffer.viewFlags);
+        GET_INT_VALUE(tp, buffer_view_id, "debug.format", ds.buffer.viewFormat);
+        GET_INT_VALUE(tp, buffer_view_id, "debug.offset", ds.buffer.offset);
+        GET_INT_VALUE(tp, buffer_view_id, "debug.range", ds.buffer.range);
+    } break;
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+        GET_INT_VALUE(tp, write_arg_set_id, "debug.buffer", buffer);
+        GET_INT_VALUE(tp, write_arg_set_id, "debug.range", ds.buffer.range);
+        GET_INT_VALUE(tp, write_arg_set_id, "debug.offset", ds.buffer.offset);
+    } break;
+    default:
+        ERROR("Unexpected descriptor set type");
+        return false;
+    }
 
     std::string query
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateBuffer-result' AND slice.ts < "
@@ -427,7 +454,7 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
     do {
         uint64_t arg_set_id = it.Get(0).AsLong();
         uint64_t bind_timestamp = it.Get(1).AsLong();
-        vksp::vksp_descriptor_set ds;
+        vksp::vksp_descriptor_set ds = { 0 };
 
         uint64_t dstSet;
         {
@@ -456,6 +483,8 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
             dsSeen[ds.ds].insert(ds.binding);
 
             switch (ds.type) {
+            case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
             case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
                 if (!get_buffer_descriptor_set(tp, write_arg_set_id, write_timestamp, ds)) {
@@ -666,13 +695,16 @@ int main(int argc, char **argv)
         "Could not get descriptor_set");
     for (auto &ds : descriptor_sets_vector) {
         switch (ds.type) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
             PRINT("descriptor_set: ds %u binding %u type %u BUFFER size %u flags %u queueFamilyIndexCount %u "
-                  "sharingMode %u usage %u range %u offset %u memorySize %u memoryType %u bindOffset %u",
+                  "sharingMode %u usage %u range %u offset %u memorySize %u memoryType %u bindOffset %u viewFlags %u "
+                  "viewFormat %u",
                 ds.ds, ds.binding, ds.type, ds.buffer.size, ds.buffer.flags, ds.buffer.queueFamilyIndexCount,
                 ds.buffer.sharingMode, ds.buffer.usage, ds.buffer.range, ds.buffer.offset, ds.buffer.memorySize,
-                ds.buffer.memoryType, ds.buffer.bindOffset);
+                ds.buffer.memoryType, ds.buffer.bindOffset, ds.buffer.viewFlags, ds.buffer.viewFormat);
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:

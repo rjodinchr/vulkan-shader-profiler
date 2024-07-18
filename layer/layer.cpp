@@ -139,6 +139,7 @@ static std::map<VkPipeline, VkShaderModule> PipelineToShaderModule;
 static std::map<VkPipeline, std::string> PipelineToShaderModuleName;
 static std::map<VkShaderModule, std::string> ShaderModuleToString;
 static std::map<VkImageView, VkImage> ImageViewToImage;
+static std::map<VkBufferView, VkBufferViewCreateInfo> BufferViewToCreateInfo;
 static std::map<uint32_t, void *> DstSetIndexToPtr;
 
 struct ThreadDispatch {
@@ -439,6 +440,8 @@ static void extract_buffers_setup(VkDevice device, VkPhysicalDevice pDevice)
         switch (ds.type) {
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
             if (!allocate_buffer(ds, device, memProperties)) {
                 return;
             }
@@ -486,10 +489,15 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
             continue;
         }
         switch (ds.object.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
             auto offset = dsUpdatedFind->second.offset;
             auto range = dsUpdatedFind->second.size;
+            if (range == VK_WHOLE_SIZE) {
+                range = ds.size - offset;
+            }
             if (ds.size < offset + range) {
                 PRINT("buffer size (%lu) is smaller than found buffer offset (%lu) + range (%lu)", ds.size, offset,
                     range);
@@ -545,7 +553,8 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
 
 static void extract_buffers_create_file(VkDevice device)
 {
-    vksp::BuffersFile buffers_file(DispatchIdToExtract);
+    bool oneFile = getenv("VKSP_EXTRACT_MULTIPLE_BUFFERS") == nullptr;
+    vksp::BuffersFile buffers_file(DispatchIdToExtract, oneFile);
     for (auto &ds : DescriptorSetsExtracted) {
         void *data;
         VkResult res = gdispatch[device].MapMemory(device, ds.memory, 0, ds.size, 0, &data);
@@ -576,6 +585,8 @@ static void extract_buffers_clean(VkDevice device)
 {
     for (auto &ds : DescriptorSetsExtracted) {
         switch (ds.object.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
             gdispatch[device].DestroyBuffer(device, ds.object.buffer, nullptr);
@@ -1070,6 +1081,20 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
 
     for (unsigned i = 0; i < descriptorWriteCount; i++) {
         switch (pDescriptorWrites[i].descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
+                (void *)pDescriptorWrites[i].dstSet, "dstBinding", pDescriptorWrites[i].dstBinding, "descriptorCount",
+                pDescriptorWrites[i].descriptorCount, "descriptorType", pDescriptorWrites[i].descriptorType,
+                "bufferView", (void *)*(pDescriptorWrites[i].pTexelBufferView));
+            DescriptorSetsUpdated[std::make_pair((void *)pDescriptorWrites[i].dstSet, pDescriptorWrites[i].dstBinding)]
+                = {
+                      .descriptorType = pDescriptorWrites[i].descriptorType,
+                      .buffer = BufferViewToCreateInfo[*(pDescriptorWrites[i].pTexelBufferView)].buffer,
+                      .size = BufferViewToCreateInfo[*(pDescriptorWrites[i].pTexelBufferView)].range,
+                      .offset = BufferViewToCreateInfo[*(pDescriptorWrites[i].pTexelBufferView)].offset,
+                  };
+            break;
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
             TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkUpdateDescriptorSets-write", "dstSet",
@@ -1192,6 +1217,23 @@ VkResult VKAPI_CALL vksp_BindBufferMemory(
         "memory", (void *)memory, "offset", memoryOffset);
 
     return gdispatch[device].BindBufferMemory(device, buffer, memory, memoryOffset);
+}
+
+VkResult VKAPI_CALL vksp_CreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkBufferView *pView)
+{
+    std::lock_guard<std::mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateBufferView", "device", (void *)device);
+
+    auto result = gdispatch[device].CreateBufferView(device, pCreateInfo, pAllocator, pView);
+
+    BufferViewToCreateInfo[*pView] = *pCreateInfo;
+
+    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateBufferView-result", "pView", (void *)*pView, "buffer",
+        (void *)pCreateInfo->buffer, "flags", pCreateInfo->flags, "format", pCreateInfo->format, "offset",
+        pCreateInfo->offset, "range", pCreateInfo->range);
+
+    return result;
 }
 
 VkResult VKAPI_CALL vksp_CreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,

@@ -79,7 +79,7 @@ To run an application with the `vulkan-kernel-profiler`, one need to ensure the 
 * The `Vulkan-Loader` needs to be able to find the manifest in `<vulkan-shader-profiler>/manifest/vulkan-shader-profiler.json`. This can be achieve by using the follow environment variable: `VK_ADD_LAYER_PATH=<path-to-vulkan-shader-profiler-manifest>`.
 * The Layer needs to be enabled. Either directly from the application, or using the following environment variable: `VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER"`.
 
-It is also possible to extract the content of the memories of buffers and images used by a specific dispatch. It requires to first do a first run to then extract the targeted dispatch. After that a second run can be done with `VKSP_EXTRACT_BUFFERS_FROM=<trace.spvasm>` set. It will generates a `<trace.spvasm.buffers>` file that can be used later on with the `vulkan-shader-profiler-runner` to initialize the memories of the images and buffers used.
+It is also possible to extract the content of the memories of buffers and images used by a specific dispatch. It requires to first do a first run to then extract the targeted dispatch. After that a second run can be done with `VKSP_EXTRACT_BUFFERS_FROM=<trace.spvasm>` set. It will generates a `<trace.spvasm.buffers>` file that can be used later on with the `vulkan-shader-profiler-runner` to initialize the memories of the images and buffers used. Buffers can also be extracted individually by setting `VKSP_EXTRACT_MULTIPLE_BUFFERS=1`, and then be merged together with `vulkan-shader-profiler-merge-buffers` (find a example in [test-buffers.sh](https://github.com/rjodinchr/vulkan-shader-profiler/blob/main/test/test-buffers.sh)).
 
 ## On ChromeOS
 

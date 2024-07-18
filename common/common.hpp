@@ -60,6 +60,8 @@ struct vksp_descriptor_set {
             uint32_t memorySize;
             uint32_t memoryType;
             uint32_t bindOffset;
+            uint32_t viewFlags;
+            uint32_t viewFormat;
         } buffer;
         struct {
             uint32_t imageLayout;

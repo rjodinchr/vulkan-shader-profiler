@@ -36,8 +36,8 @@ jobs:
           sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers
       - name: Build SPIRV-Tools
         run: |
-          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
-          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
+          git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Tools.git third_party/spirv-tools
+          git clone --depth 1 --branch vksp https://github.com/rjodinchr/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Release
@@ -116,6 +116,7 @@ jobs:
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build_release/layer/:${{ github.workspace }}/third_party/vulkan-loader/build/loader/:$LD_LIBRARY_PATH
           VKSP_RUNNER: ${{ github.workspace }}/build_release/runner/vulkan-shader-profiler-runner
+          VKSP_MERGE_BUFFERS: ${{ github.workspace}}/build_release/merge-buffers/vulkan-shader-profiler-merge-buffers
           PERFETTO_TRACED: ${{ github.workspace }}/third_party/perfetto/out/linux_clang_release/traced
           PERFETTO_BINARY: ${{ github.workspace }}/third_party/perfetto/out/linux_clang_release/perfetto
         run: |

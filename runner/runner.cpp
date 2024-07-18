@@ -71,6 +71,7 @@ static VkInstance gInstance;
 static VkCommandPool gCmdPool;
 static std::vector<VkBuffer> gBuffers;
 static std::vector<VkDeviceMemory> gMemories;
+static std::vector<VkBufferView> gBufferViews;
 static std::vector<VkImage> gImages;
 static std::vector<VkImageView> gImageViews;
 static std::vector<VkSampler> gSamplers;
@@ -302,6 +303,11 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     CHECK_VK(res, "Could not create buffer");
     gBuffers.push_back(buffer);
 
+    uint64_t range = ds.buffer.range;
+    if (ds.buffer.range == UINT32_MAX) {
+        range = VK_WHOLE_SIZE;
+    }
+
     if (gOutputDs == ds.ds && gOutputBinding == ds.binding) {
         gOutputBuffer = buffer;
         gOutputDsPtr = &ds;
@@ -344,20 +350,58 @@ static uint32_t handle_descriptor_set_buffer(vksp::vksp_descriptor_set &ds, VkDe
     CHECK(
         initialize_buffer(device, cmdBuffer, memProperties, ds, buffer) == 0, "Could not initialize memory for buffer");
 
-    const VkDescriptorBufferInfo bufferInfo = { buffer, ds.buffer.offset, ds.buffer.range };
-    const VkWriteDescriptorSet write = {
-        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        nullptr,
-        descSet[ds.ds],
-        ds.binding,
-        0,
-        1,
-        (VkDescriptorType)ds.type,
-        nullptr,
-        &bufferInfo,
-        nullptr,
-    };
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    switch (ds.type) {
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: {
+        VkBufferView pView;
+        const VkBufferViewCreateInfo pCreateInfo = {
+            VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+            nullptr,
+            ds.buffer.viewFlags,
+            buffer,
+            (VkFormat)ds.buffer.viewFormat,
+            ds.buffer.offset,
+            range,
+        };
+        res = vkCreateBufferView(device, &pCreateInfo, nullptr, &pView);
+        CHECK_VK(res, "Could not create buffer view");
+        gBufferViews.push_back(pView);
+
+        const VkWriteDescriptorSet write = {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            nullptr,
+            descSet[ds.ds],
+            ds.binding,
+            0,
+            1,
+            (VkDescriptorType)ds.type,
+            nullptr,
+            nullptr,
+            &pView,
+        };
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    } break;
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+        const VkDescriptorBufferInfo bufferInfo = { buffer, ds.buffer.offset, range };
+        const VkWriteDescriptorSet write = {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            nullptr,
+            descSet[ds.ds],
+            ds.binding,
+            0,
+            1,
+            (VkDescriptorType)ds.type,
+            nullptr,
+            &bufferInfo,
+            nullptr,
+        };
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    } break;
+    default:
+        CHECK(false, "Unexpected descriptor set type");
+        return -1;
+    }
 
     if (bCounter) {
         gCounterBuffer = buffer;
@@ -796,6 +840,8 @@ static uint32_t record_dump_output(
     VkDevice device, VkCommandBuffer cmdBuffer, VkPhysicalDeviceMemoryProperties &memProperties)
 {
     switch (gOutputDsPtr->type) {
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
         VkBuffer buffer;
@@ -1055,6 +1101,9 @@ void clean_vk_objects(VkDevice device, VkCommandBuffer cmdBuffer, std::vector<Vk
     for (auto image : gImages) {
         vkDestroyImage(device, image, nullptr);
     }
+    for (auto bufferView : gBufferViews) {
+        vkDestroyBufferView(device, bufferView, nullptr);
+    }
     for (auto buffer : gBuffers) {
         vkDestroyBuffer(device, buffer, nullptr);
     }
@@ -1203,14 +1252,17 @@ int main(int argc, char **argv)
 
     for (auto &ds : dsVector) {
         switch (ds.type) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
         case VKSP_DESCRIPTOR_TYPE_STORAGE_BUFFER_COUNTER:
             PRINT("descriptor_set: ds %u binding %u type %u BUFFER size %u flags %u queueFamilyIndexCount %u "
-                  "sharingMode %u usage %u range %u offset %u memorySize %u memoryType %u bindOffset %u",
+                  "sharingMode %u usage %u range %u offset %u memorySize %u memoryType %u bindOffset %u viewFlags %u "
+                  "viewFormat %u",
                 ds.ds, ds.binding, ds.type, ds.buffer.size, ds.buffer.flags, ds.buffer.queueFamilyIndexCount,
                 ds.buffer.sharingMode, ds.buffer.usage, ds.buffer.range, ds.buffer.offset, ds.buffer.memorySize,
-                ds.buffer.memoryType, ds.buffer.bindOffset);
+                ds.buffer.memoryType, ds.buffer.bindOffset, ds.buffer.viewFlags, ds.buffer.viewFormat);
             CHECK(handle_descriptor_set_buffer(ds, device, cmdBuffer, memProperties, descSet) == 0,
                 "Could not handle descriptor set buffer");
             break;
