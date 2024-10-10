@@ -40,7 +40,7 @@ public:
     {
         auto module = context()->module();
 
-        std::vector<uint32_t> ext_words = spvtools::utils::MakeVector("NonSemantic.VkspReflection.2");
+        std::vector<uint32_t> ext_words = spvtools::utils::MakeVector(VKSP_EXTINST_STR);
         auto ExtInstId = context()->TakeNextId();
         auto ExtInst = new spvtools::opt::Instruction(
             context(), spv::Op::OpExtInstImport, 0u, ExtInstId, { { SPV_OPERAND_TYPE_LITERAL_STRING, ext_words } });

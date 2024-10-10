@@ -17,6 +17,8 @@
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+#define VKSP_EXTINST_STR "NonSemantic.VkspReflection.3"
+
 #define PRINT_IMPL(file, message, ...)                                                                                 \
     do {                                                                                                               \
         fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
