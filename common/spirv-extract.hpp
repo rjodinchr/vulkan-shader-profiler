@@ -166,6 +166,10 @@ private:
         }
     }
 
+    spvtools::opt::Instruction *GetInstruction(uint32_t id) { return id_to_inst_[id]; }
+    const char *GetString(uint32_t id) { return strdup(GetInstruction(id)->GetOperand(1).AsString().c_str()); }
+    uint32_t GetUInt(uint32_t id) { return (uint32_t)GetInstruction(id)->GetOperand(2).words[0]; }
+
     void ParseInstruction(spvtools::opt::Instruction *inst, uint32_t ext_inst_id,
         std::map<uint32_t, uint32_t> &id_to_descriptor_set, std::map<uint32_t, uint32_t> &id_to_binding,
         int32_t &descriptor_set_0_max_binding, std::vector<spvtools::opt::Instruction *> &start_counters,
@@ -192,118 +196,125 @@ private:
                 }
             }
             return;
+        } else if (inst->opcode() == spv::Op::OpString) {
+            id_to_inst_[inst->GetOperand(0).AsId()] = inst;
+            return;
+        } else if (inst->opcode() == spv::Op::OpConstant) {
+            id_to_inst_[inst->GetOperand(1).AsId()] = inst;
+            return;
         } else if (inst->opcode() != spv::Op::OpExtInst || ext_inst_id != inst->GetOperand(op_id++).AsId()) {
             return;
         }
 
+        auto *cst_mgr = context()->get_constant_mgr();
         auto vksp_inst = inst->GetOperand(op_id++).words[0];
         switch (vksp_inst) {
         case NonSemanticVkspReflectionConfiguration:
-            config_->enabledExtensionNames = strdup(inst->GetOperand(op_id++).AsString().c_str());
-            config_->specializationInfoDataSize = inst->GetOperand(op_id++).words[0];
-            config_->specializationInfoData = strdup(inst->GetOperand(op_id++).AsString().c_str());
-            config_->shaderName = strdup(inst->GetOperand(op_id++).AsString().c_str());
-            config_->entryPoint = strdup(inst->GetOperand(op_id++).AsString().c_str());
-            config_->groupCountX = inst->GetOperand(op_id++).words[0];
-            config_->groupCountY = inst->GetOperand(op_id++).words[0];
-            config_->groupCountZ = inst->GetOperand(op_id++).words[0];
-            config_->dispatchId = inst->GetOperand(op_id++).words[0];
+            config_->enabledExtensionNames = GetString(inst->GetOperand(op_id++).AsId());
+            config_->specializationInfoDataSize = GetUInt(inst->GetOperand(op_id++).AsId());
+            config_->specializationInfoData = GetString(inst->GetOperand(op_id++).AsId());
+            config_->shaderName = GetString(inst->GetOperand(op_id++).AsId());
+            config_->entryPoint = GetString(inst->GetOperand(op_id++).AsId());
+            config_->groupCountX = GetUInt(inst->GetOperand(op_id++).AsId());
+            config_->groupCountY = GetUInt(inst->GetOperand(op_id++).AsId());
+            config_->groupCountZ = GetUInt(inst->GetOperand(op_id++).AsId());
+            config_->dispatchId = GetUInt(inst->GetOperand(op_id++).AsId());
             break;
         case NonSemanticVkspReflectionDescriptorSetBuffer: {
             vksp_descriptor_set ds;
-            ds.ds = inst->GetOperand(op_id++).words[0];
-            ds.binding = inst->GetOperand(op_id++).words[0];
-            ds.type = inst->GetOperand(op_id++).words[0];
-            ds.buffer.flags = inst->GetOperand(op_id++).words[0];
-            ds.buffer.queueFamilyIndexCount = inst->GetOperand(op_id++).words[0];
-            ds.buffer.sharingMode = inst->GetOperand(op_id++).words[0];
-            ds.buffer.size = inst->GetOperand(op_id++).words[0];
-            ds.buffer.usage = inst->GetOperand(op_id++).words[0];
-            ds.buffer.range = inst->GetOperand(op_id++).words[0];
-            ds.buffer.offset = inst->GetOperand(op_id++).words[0];
-            ds.buffer.memorySize = inst->GetOperand(op_id++).words[0];
-            ds.buffer.memoryType = inst->GetOperand(op_id++).words[0];
-            ds.buffer.bindOffset = inst->GetOperand(op_id++).words[0];
-            ds.buffer.viewFlags = inst->GetOperand(op_id++).words[0];
-            ds.buffer.viewFormat = inst->GetOperand(op_id++).words[0];
+            ds.ds = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.binding = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.type = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.flags = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.queueFamilyIndexCount = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.sharingMode = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.size = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.usage = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.range = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.offset = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.memorySize = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.memoryType = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.bindOffset = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.viewFlags = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.buffer.viewFormat = GetUInt(inst->GetOperand(op_id++).AsId());
             ds_->push_back(ds);
             descriptor_set_0_max_binding = UpdateMaxBinding(ds.ds, ds.binding, descriptor_set_0_max_binding);
         } break;
         case NonSemanticVkspReflectionDescriptorSetImage: {
             vksp_descriptor_set ds;
-            ds.ds = inst->GetOperand(op_id++).words[0];
-            ds.binding = inst->GetOperand(op_id++).words[0];
-            ds.type = inst->GetOperand(op_id++).words[0];
-            ds.image.imageLayout = inst->GetOperand(op_id++).words[0];
-            ds.image.imageFlags = inst->GetOperand(op_id++).words[0];
-            ds.image.imageType = inst->GetOperand(op_id++).words[0];
-            ds.image.format = inst->GetOperand(op_id++).words[0];
-            ds.image.width = inst->GetOperand(op_id++).words[0];
-            ds.image.height = inst->GetOperand(op_id++).words[0];
-            ds.image.depth = inst->GetOperand(op_id++).words[0];
-            ds.image.mipLevels = inst->GetOperand(op_id++).words[0];
-            ds.image.arrayLayers = inst->GetOperand(op_id++).words[0];
-            ds.image.samples = inst->GetOperand(op_id++).words[0];
-            ds.image.tiling = inst->GetOperand(op_id++).words[0];
-            ds.image.usage = inst->GetOperand(op_id++).words[0];
-            ds.image.sharingMode = inst->GetOperand(op_id++).words[0];
-            ds.image.queueFamilyIndexCount = inst->GetOperand(op_id++).words[0];
-            ds.image.initialLayout = inst->GetOperand(op_id++).words[0];
-            ds.image.aspectMask = inst->GetOperand(op_id++).words[0];
-            ds.image.baseMipLevel = inst->GetOperand(op_id++).words[0];
-            ds.image.levelCount = inst->GetOperand(op_id++).words[0];
-            ds.image.baseArrayLayer = inst->GetOperand(op_id++).words[0];
-            ds.image.layerCount = inst->GetOperand(op_id++).words[0];
-            ds.image.viewFlags = inst->GetOperand(op_id++).words[0];
-            ds.image.viewType = inst->GetOperand(op_id++).words[0];
-            ds.image.viewFormat = inst->GetOperand(op_id++).words[0];
-            ds.image.component_a = inst->GetOperand(op_id++).words[0];
-            ds.image.component_b = inst->GetOperand(op_id++).words[0];
-            ds.image.component_g = inst->GetOperand(op_id++).words[0];
-            ds.image.component_r = inst->GetOperand(op_id++).words[0];
-            ds.image.memorySize = inst->GetOperand(op_id++).words[0];
-            ds.image.memoryType = inst->GetOperand(op_id++).words[0];
-            ds.image.bindOffset = inst->GetOperand(op_id++).words[0];
+            ds.ds = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.binding = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.type = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.imageLayout = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.imageFlags = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.imageType = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.format = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.width = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.height = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.depth = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.mipLevels = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.arrayLayers = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.samples = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.tiling = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.usage = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.sharingMode = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.queueFamilyIndexCount = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.initialLayout = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.aspectMask = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.baseMipLevel = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.levelCount = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.baseArrayLayer = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.layerCount = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.viewFlags = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.viewType = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.viewFormat = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.component_a = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.component_b = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.component_g = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.component_r = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.memorySize = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.memoryType = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.image.bindOffset = GetUInt(inst->GetOperand(op_id++).AsId());
             ds_->push_back(ds);
             descriptor_set_0_max_binding = UpdateMaxBinding(ds.ds, ds.binding, descriptor_set_0_max_binding);
         } break;
         case NonSemanticVkspReflectionDescriptorSetSampler: {
             vksp_descriptor_set ds;
-            ds.ds = inst->GetOperand(op_id++).words[0];
-            ds.binding = inst->GetOperand(op_id++).words[0];
-            ds.type = inst->GetOperand(op_id++).words[0];
-            ds.sampler.flags = inst->GetOperand(op_id++).words[0];
-            ds.sampler.magFilter = inst->GetOperand(op_id++).words[0];
-            ds.sampler.minFilter = inst->GetOperand(op_id++).words[0];
-            ds.sampler.mipmapMode = inst->GetOperand(op_id++).words[0];
-            ds.sampler.addressModeU = inst->GetOperand(op_id++).words[0];
-            ds.sampler.addressModeV = inst->GetOperand(op_id++).words[0];
-            ds.sampler.addressModeW = inst->GetOperand(op_id++).words[0];
-            ds.sampler.uMipLodBias = inst->GetOperand(op_id++).words[0];
-            ds.sampler.anisotropyEnable = inst->GetOperand(op_id++).words[0];
-            ds.sampler.uMaxAnisotropy = inst->GetOperand(op_id++).words[0];
-            ds.sampler.compareEnable = inst->GetOperand(op_id++).words[0];
-            ds.sampler.compareOp = inst->GetOperand(op_id++).words[0];
-            ds.sampler.uMinLod = inst->GetOperand(op_id++).words[0];
-            ds.sampler.uMaxLod = inst->GetOperand(op_id++).words[0];
-            ds.sampler.borderColor = inst->GetOperand(op_id++).words[0];
-            ds.sampler.unnormalizedCoordinates = inst->GetOperand(op_id++).words[0];
+            ds.ds = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.binding = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.type = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.flags = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.magFilter = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.minFilter = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.mipmapMode = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.addressModeU = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.addressModeV = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.addressModeW = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.uMipLodBias = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.anisotropyEnable = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.uMaxAnisotropy = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.compareEnable = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.compareOp = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.uMinLod = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.uMaxLod = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.borderColor = GetUInt(inst->GetOperand(op_id++).AsId());
+            ds.sampler.unnormalizedCoordinates = GetUInt(inst->GetOperand(op_id++).AsId());
             ds_->push_back(ds);
             descriptor_set_0_max_binding = UpdateMaxBinding(ds.ds, ds.binding, descriptor_set_0_max_binding);
         } break;
         case NonSemanticVkspReflectionPushConstants:
             vksp_push_constant pc;
-            pc.offset = inst->GetOperand(op_id++).words[0];
-            pc.size = inst->GetOperand(op_id++).words[0];
-            pc.pValues = strdup(inst->GetOperand(op_id++).AsString().c_str());
-            pc.stageFlags = inst->GetOperand(op_id++).words[0];
+            pc.offset = GetUInt(inst->GetOperand(op_id++).AsId());
+            pc.size = GetUInt(inst->GetOperand(op_id++).AsId());
+            pc.pValues = GetString(inst->GetOperand(op_id++).AsId());
+            pc.stageFlags = GetUInt(inst->GetOperand(op_id++).AsId());
             pc_->push_back(pc);
             break;
         case NonSemanticVkspReflectionSpecializationMapEntry:
             vksp_specialization_map_entry me;
-            me.constantID = inst->GetOperand(op_id++).words[0];
-            me.offset = inst->GetOperand(op_id++).words[0];
-            me.size = inst->GetOperand(op_id++).words[0];
+            me.constantID = GetUInt(inst->GetOperand(op_id++).AsId());
+            me.offset = GetUInt(inst->GetOperand(op_id++).AsId());
+            me.size = GetUInt(inst->GetOperand(op_id++).AsId());
             me_->push_back(me);
             break;
         case NonSemanticVkspReflectionStartCounter:
@@ -492,7 +503,7 @@ private:
         uint32_t next_counter_id = 2;
 
         for (auto *inst : start_counters) {
-            const char *counter_name = strdup(inst->GetOperand(4).AsString().c_str());
+            const char *counter_name = GetString(inst->GetOperand(4).AsId());
 
             auto read_clock_id = context()->TakeNextId();
             auto read_clock_inst = new spvtools::opt::Instruction(context(), spv::Op::OpReadClockKHR, u64_ty_id,
@@ -551,6 +562,7 @@ private:
     std::vector<vksp_descriptor_set> *ds_;
     std::vector<vksp_specialization_map_entry> *me_;
     std::vector<vksp_counter> *counters_;
+    std::map<uint32_t, spvtools::opt::Instruction *> id_to_inst_;
     vksp_configuration *config_;
     bool disableCounters_;
 };

@@ -1,7 +1,7 @@
 ; SPIR-V
 ; Version: 1.6
 ; Generator: Khronos SPIR-V Tools Assembler; 0
-; Bound: 81
+; Bound: 98
 ; Schema: 0
                OpCapability Shader
                OpCapability ShaderClockKHR
@@ -9,9 +9,9 @@
                OpCapability Int64Atomics
                OpExtension "SPV_KHR_shader_clock"
                OpExtension "SPV_KHR_storage_buffer_storage_class"
-         %73 = OpExtInstImport "NonSemantic.VkspReflection.2"
+         %84 = OpExtInstImport "NonSemantic.VkspReflection.4"
                OpMemoryModel Logical GLSL450
-               OpEntryPoint GLCompute %3 "test_simple" %gl_GlobalInvocationID %5 %6 %7 %64
+               OpEntryPoint GLCompute %3 "test_simple" %gl_GlobalInvocationID %5 %6 %7 %75
 
                ; Debug Information
                OpSource OpenCL_C 120
@@ -19,6 +19,11 @@
           %9 = OpString " kernel"
          %10 = OpString "out"
          %11 = OpString "uint*"
+         %37 = OpString ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_EXT_descriptor_indexing.VK_KHR_shader_clock"
+         %38 = OpString "020000000100000001000000"
+         %39 = OpString "vksp_s0"
+         %40 = OpString "test_simple"
+         %43 = OpString "00000000000000000000000000000000000000000000000000000000"
 
                ; Annotations
                OpMemberDecorate %_struct_12 0 Offset 0
@@ -35,10 +40,10 @@
                OpDecorate %17 SpecId 1
                OpDecorate %18 SpecId 2
                OpDecorate %_runtimearr_ulong ArrayStride 8
-               OpMemberDecorate %_struct_59 0 Offset 0
-               OpDecorate %_struct_59 Block
-               OpDecorate %64 DescriptorSet 0
-               OpDecorate %64 Binding 1
+               OpMemberDecorate %_struct_71 0 Offset 0
+               OpDecorate %_struct_71 Block
+               OpDecorate %75 DescriptorSet 0
+               OpDecorate %75 Binding 1
 
                ; Types, variables and constants
        %uint = OpTypeInt 32 0
@@ -70,39 +75,52 @@
 %gl_GlobalInvocationID = OpVariable %_ptr_Input_v3uint Input    ; BuiltIn GlobalInvocationId
           %5 = OpVariable %_ptr_Private_v3uint Private %gl_WorkGroupSize
           %6 = OpVariable %_ptr_StorageBuffer__struct_15 StorageBuffer  ; DescriptorSet 0, Binding 0
+   %uint_128 = OpConstant %uint 128
+    %uint_28 = OpConstant %uint 28
+    %uint_32 = OpConstant %uint 32
+     %uint_7 = OpConstant %uint 7
+  %uint_1024 = OpConstant %uint 1024
+    %uint_63 = OpConstant %uint 63
+     %uint_4 = OpConstant %uint 4
+     %uint_8 = OpConstant %uint 8
       %ulong = OpTypeInt 64 0
 %_runtimearr_ulong = OpTypeRuntimeArray %ulong      ; ArrayStride 8
- %_struct_59 = OpTypeStruct %_runtimearr_ulong      ; Block
-%_ptr_StorageBuffer__struct_59 = OpTypePointer StorageBuffer %_struct_59
+ %_struct_71 = OpTypeStruct %_runtimearr_ulong      ; Block
+%_ptr_StorageBuffer__struct_71 = OpTypePointer StorageBuffer %_struct_71
 %_ptr_StorageBuffer_ulong = OpTypePointer StorageBuffer %ulong
      %uint_3 = OpConstant %uint 3
-     %uint_8 = OpConstant %uint 8
-         %64 = OpVariable %_ptr_StorageBuffer__struct_59 StorageBuffer  ; DescriptorSet 0, Binding 1
+         %75 = OpVariable %_ptr_StorageBuffer__struct_71 StorageBuffer  ; DescriptorSet 0, Binding 1
     %ulong_0 = OpConstant %ulong 0
-         %74 = OpExtInst %void %73 Configuration ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_EXT_descriptor_indexing.VK_KHR_shader_clock" 12 "020000000100000001000000" "vksp_s0" "test_simple" 128 1 1 0
-         %75 = OpExtInst %void %73 PushConstants 0 28 "00000000000000000000000000000000000000000000000000000000" 32
-         %76 = OpExtInst %void %73 DescriptorSetBuffer 0 0 7 0 0 0 1024 63 1024 0 1024 0 0 0 0
-         %77 = OpExtInst %void %73 DescriptorSetBuffer 0 1 7 0 0 0 16 34 16 0 16 0 0 0 0
-         %78 = OpExtInst %void %73 SpecializationMapEntry 0 0 4
-         %79 = OpExtInst %void %73 SpecializationMapEntry 1 4 4
-         %80 = OpExtInst %void %73 SpecializationMapEntry 2 8 4
+         %86 = OpString ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_EXT_descriptor_indexing.VK_KHR_shader_clock.VK_KHR_shader_clock"
+         %87 = OpString "020000000100000001000000"
+         %88 = OpString "vksp_s0"
+         %89 = OpString "test_simple"
+         %91 = OpString "00000000000000000000000000000000000000000000000000000000"
+    %uint_34 = OpConstant %uint 34
+         %85 = OpExtInst %void %84 Configuration %86 %uint_12 %87 %88 %89 %uint_128 %uint_1 %uint_1 %uint_0
+         %90 = OpExtInst %void %84 PushConstants %uint_0 %uint_28 %91 %uint_32
+         %92 = OpExtInst %void %84 DescriptorSetBuffer %uint_0 %uint_0 %uint_7 %uint_0 %uint_0 %uint_0 %uint_1024 %uint_63 %uint_1024 %uint_0 %uint_1024 %uint_0 %uint_0 %uint_0 %uint_0
+         %93 = OpExtInst %void %84 DescriptorSetBuffer %uint_0 %uint_1 %uint_7 %uint_0 %uint_0 %uint_0 %uint_16 %uint_34 %uint_16 %uint_0 %uint_16 %uint_0 %uint_0 %uint_0 %uint_0
+         %95 = OpExtInst %void %84 SpecializationMapEntry %uint_0 %uint_0 %uint_4
+         %96 = OpExtInst %void %84 SpecializationMapEntry %uint_1 %uint_4 %uint_4
+         %97 = OpExtInst %void %84 SpecializationMapEntry %uint_2 %uint_8 %uint_4
 
                ; Function 3
           %3 = OpFunction %void None %26
-         %44 = OpLabel
-         %66 = OpReadClockKHR %ulong %uint_3
-         %45 = OpAccessChain %_ptr_Input_uint %gl_GlobalInvocationID %uint_0
-         %46 = OpLoad %uint %45
-         %47 = OpAccessChain %_ptr_PushConstant_uint %7 %uint_1 %uint_0
-         %48 = OpLoad %uint %47
-         %49 = OpIAdd %uint %48 %46
-         %50 = OpAccessChain %_ptr_StorageBuffer_uint %6 %uint_0 %49
-               OpStore %50 %49
-         %67 = OpReadClockKHR %ulong %uint_3
-         %68 = OpISub %ulong %67 %66
-         %69 = OpAccessChain %_ptr_StorageBuffer_ulong %64 %uint_0 %uint_0
-         %70 = OpAtomicIIncrement %ulong %69 %uint_1 %uint_8
-         %71 = OpAccessChain %_ptr_StorageBuffer_ulong %64 %uint_0 %uint_1
-         %72 = OpAtomicIAdd %ulong %71 %uint_1 %uint_8 %68
+         %56 = OpLabel
+         %77 = OpReadClockKHR %ulong %uint_3
+         %57 = OpAccessChain %_ptr_Input_uint %gl_GlobalInvocationID %uint_0
+         %58 = OpLoad %uint %57
+         %59 = OpAccessChain %_ptr_PushConstant_uint %7 %uint_1 %uint_0
+         %60 = OpLoad %uint %59
+         %61 = OpIAdd %uint %60 %58
+         %62 = OpAccessChain %_ptr_StorageBuffer_uint %6 %uint_0 %61
+               OpStore %62 %61
+         %78 = OpReadClockKHR %ulong %uint_3
+         %79 = OpISub %ulong %78 %77
+         %80 = OpAccessChain %_ptr_StorageBuffer_ulong %75 %uint_0 %uint_0
+         %81 = OpAtomicIIncrement %ulong %80 %uint_1 %uint_8
+         %82 = OpAccessChain %_ptr_StorageBuffer_ulong %75 %uint_0 %uint_1
+         %83 = OpAtomicIAdd %ulong %82 %uint_1 %uint_8 %79
                OpReturn
                OpFunctionEnd

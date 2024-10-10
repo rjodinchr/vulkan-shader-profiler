@@ -26,6 +26,17 @@
 namespace vksp {
 
 class InsertVkspReflectInfoPass : public spvtools::opt::Pass {
+private:
+    uint32_t GetStringId(const char *string)
+    {
+        auto string_vector = spvtools::utils::MakeVector(string);
+        uint32_t id = context()->TakeNextId();
+        auto inst = new spvtools::opt::Instruction(
+            context(), spv::Op::OpString, 0u, id, { { SPV_OPERAND_TYPE_LITERAL_STRING, string_vector } });
+        context()->module()->AddGlobalValue(std::unique_ptr<spvtools::opt::Instruction>(inst));
+        return id;
+    }
+
 public:
     InsertVkspReflectInfoPass(std::vector<vksp_push_constant> *pc, std::vector<vksp_descriptor_set> *ds,
         std::vector<vksp_specialization_map_entry> *me, vksp_configuration *config)
@@ -47,39 +58,35 @@ public:
         module->AddExtInstImport(std::unique_ptr<spvtools::opt::Instruction>(ExtInst));
 
         uint32_t void_ty_id = context()->get_type_mgr()->GetVoidTypeId();
+        auto *cst_mgr = context()->get_constant_mgr();
 
-        std::vector<uint32_t> enabledExtensions = spvtools::utils::MakeVector(config_->enabledExtensionNames);
-        std::vector<uint32_t> pData = spvtools::utils::MakeVector(config_->specializationInfoData);
-        std::vector<uint32_t> shaderName = spvtools::utils::MakeVector(config_->shaderName);
-        std::vector<uint32_t> entryPoint = spvtools::utils::MakeVector(config_->entryPoint);
         auto ConfigId = context()->TakeNextId();
         auto ConfigInst = new spvtools::opt::Instruction(context(), spv::Op::OpExtInst, void_ty_id, ConfigId,
             {
                 { SPV_OPERAND_TYPE_ID, { ExtInstId } },
                 { SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER, { NonSemanticVkspReflectionConfiguration } },
-                { SPV_OPERAND_TYPE_LITERAL_STRING, enabledExtensions },
-                { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->specializationInfoDataSize } },
-                { SPV_OPERAND_TYPE_LITERAL_STRING, pData },
-                { SPV_OPERAND_TYPE_LITERAL_STRING, shaderName },
-                { SPV_OPERAND_TYPE_LITERAL_STRING, entryPoint },
-                { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->groupCountX } },
-                { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->groupCountY } },
-                { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->groupCountZ } },
-                { SPV_OPERAND_TYPE_LITERAL_INTEGER, { config_->dispatchId } },
+                { SPV_OPERAND_TYPE_ID, { GetStringId(config_->enabledExtensionNames) } },
+                { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(config_->specializationInfoDataSize) } },
+                { SPV_OPERAND_TYPE_ID, { GetStringId(config_->specializationInfoData) } },
+                { SPV_OPERAND_TYPE_ID, { GetStringId(config_->shaderName) } },
+                { SPV_OPERAND_TYPE_ID, { GetStringId(config_->entryPoint) } },
+                { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(config_->groupCountX) } },
+                { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(config_->groupCountY) } },
+                { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(config_->groupCountZ) } },
+                { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(config_->dispatchId) } },
             });
         module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(ConfigInst));
 
         for (auto &pc : *pc_) {
-            std::vector<uint32_t> pValues = spvtools::utils::MakeVector(pc.pValues);
             auto PcInstId = context()->TakeNextId();
             auto PcInst = new spvtools::opt::Instruction(context(), spv::Op::OpExtInst, void_ty_id, PcInstId,
                 {
                     { SPV_OPERAND_TYPE_ID, { ExtInstId } },
                     { SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER, { NonSemanticVkspReflectionPushConstants } },
-                    { SPV_OPERAND_TYPE_LITERAL_INTEGER, { pc.offset } },
-                    { SPV_OPERAND_TYPE_LITERAL_INTEGER, { pc.size } },
-                    { SPV_OPERAND_TYPE_LITERAL_STRING, pValues },
-                    { SPV_OPERAND_TYPE_LITERAL_INTEGER, { pc.stageFlags } },
+                    { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(pc.offset) } },
+                    { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(pc.size) } },
+                    { SPV_OPERAND_TYPE_ID, { GetStringId(pc.pValues) } },
+                    { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(pc.stageFlags) } },
                 });
             module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(PcInst));
         }
@@ -96,21 +103,21 @@ public:
                         { SPV_OPERAND_TYPE_ID, { ExtInstId } },
                         { SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER,
                             { NonSemanticVkspReflectionDescriptorSetBuffer } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.ds } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.binding } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.type } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.flags } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.queueFamilyIndexCount } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.sharingMode } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.size } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.usage } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.range } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.offset } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.memorySize } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.memoryType } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.bindOffset } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.viewFlags } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.buffer.viewFormat } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.ds) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.binding) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.type) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.flags) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.queueFamilyIndexCount) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.sharingMode) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.size) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.usage) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.range) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.offset) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.memorySize) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.memoryType) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.bindOffset) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.viewFlags) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.buffer.viewFormat) } },
                     });
                 module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(DstInst));
             } break;
@@ -122,39 +129,39 @@ public:
                         { SPV_OPERAND_TYPE_ID, { ExtInstId } },
                         { SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER,
                             { NonSemanticVkspReflectionDescriptorSetImage } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.ds } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.binding } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.type } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.imageLayout } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.imageFlags } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.imageType } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.format } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.width } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.height } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.depth } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.mipLevels } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.arrayLayers } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.samples } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.tiling } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.usage } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.sharingMode } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.queueFamilyIndexCount } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.initialLayout } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.aspectMask } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.baseMipLevel } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.levelCount } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.baseArrayLayer } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.layerCount } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.viewFlags } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.viewType } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.viewFormat } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.component_a } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.component_b } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.component_g } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.component_r } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.memorySize } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.memoryType } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.image.bindOffset } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.ds) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.binding) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.type) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.imageLayout) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.imageFlags) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.imageType) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.format) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.width) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.height) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.depth) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.mipLevels) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.arrayLayers) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.samples) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.tiling) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.usage) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.sharingMode) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.queueFamilyIndexCount) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.initialLayout) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.aspectMask) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.baseMipLevel) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.levelCount) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.baseArrayLayer) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.layerCount) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.viewFlags) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.viewType) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.viewFormat) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.component_a) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.component_b) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.component_g) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.component_r) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.memorySize) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.memoryType) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.image.bindOffset) } },
                     });
                 module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(DstInst));
             } break;
@@ -165,25 +172,25 @@ public:
                         { SPV_OPERAND_TYPE_ID, { ExtInstId } },
                         { SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER,
                             { NonSemanticVkspReflectionDescriptorSetSampler } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.ds } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.binding } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.type } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.flags } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.magFilter } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.minFilter } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.mipmapMode } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.addressModeU } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.addressModeV } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.addressModeW } },
-                        { SPV_OPERAND_TYPE_LITERAL_FLOAT, { ds.sampler.uMipLodBias } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.anisotropyEnable } },
-                        { SPV_OPERAND_TYPE_LITERAL_FLOAT, { ds.sampler.uMaxAnisotropy } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.compareEnable } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.compareOp } },
-                        { SPV_OPERAND_TYPE_LITERAL_FLOAT, { ds.sampler.uMinLod } },
-                        { SPV_OPERAND_TYPE_LITERAL_FLOAT, { ds.sampler.uMaxLod } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.borderColor } },
-                        { SPV_OPERAND_TYPE_LITERAL_INTEGER, { ds.sampler.unnormalizedCoordinates } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.ds) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.binding) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.type) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.flags) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.magFilter) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.minFilter) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.mipmapMode) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.addressModeU) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.addressModeV) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.addressModeW) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetFloatConstId(ds.sampler.uMipLodBias) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.anisotropyEnable) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetFloatConstId(ds.sampler.uMaxAnisotropy) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.compareEnable) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.compareOp) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetFloatConstId(ds.sampler.uMinLod) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetFloatConstId(ds.sampler.uMaxLod) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.borderColor) } },
+                        { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(ds.sampler.unnormalizedCoordinates) } },
                     });
                 module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(DstInst));
             } break;
@@ -199,9 +206,9 @@ public:
                     { SPV_OPERAND_TYPE_ID, { ExtInstId } },
                     { SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER,
                         { NonSemanticVkspReflectionSpecializationMapEntry } },
-                    { SPV_OPERAND_TYPE_LITERAL_INTEGER, { me.constantID } },
-                    { SPV_OPERAND_TYPE_LITERAL_INTEGER, { me.offset } },
-                    { SPV_OPERAND_TYPE_LITERAL_INTEGER, { me.size } },
+                    { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(me.constantID) } },
+                    { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(me.offset) } },
+                    { SPV_OPERAND_TYPE_ID, { cst_mgr->GetUIntConstId(me.size) } },
                 });
             module->AddExtInstDebugInfo(std::unique_ptr<spvtools::opt::Instruction>(MapEntryInst));
         }
@@ -215,7 +222,6 @@ private:
     std::vector<vksp_specialization_map_entry> *me_;
     vksp_configuration *config_;
 };
-
 }
 
 bool text_to_binary(spv_context context, std::string *shader, spv_binary &binary)

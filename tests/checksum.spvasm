@@ -5,7 +5,7 @@
 ; Schema: 0
                OpCapability Shader
           %1 = OpExtInstImport "NonSemantic.ClspvReflection.5"
-         %82 = OpExtInstImport "NonSemantic.VkspReflection.2"
+         %82 = OpExtInstImport "NonSemantic.VkspReflection.4"
                OpMemoryModel Logical GLSL450
                OpEntryPoint GLCompute %2 "test_simple" %gl_GlobalInvocationID %4 %5 %6 %7
 
@@ -76,15 +76,24 @@
           %7 = OpVariable %_ptr_PushConstant__struct_18 PushConstant
           %5 = OpVariable %_ptr_StorageBuffer__struct_20 StorageBuffer
           %6 = OpVariable %_ptr_StorageBuffer__struct_20 StorageBuffer
-         %83 = OpExtInst %void %82 Configuration ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_EXT_descriptor_indexing" 12 "020000000100000001000000" "vksp_s0" "test_simple" 16 1 1 0
-         %84 = OpExtInst %void %82 PushConstants 16 12 "000000000000000000000000" 32
-         %85 = OpExtInst %void %82 PushConstants 32 4 "20000000" 32
-         %86 = OpExtInst %void %82 PushConstants 0 12 "000000000000000000000000" 32
-         %87 = OpExtInst %void %82 DescriptorSetBuffer 0 0 7 0 0 0 4096 63 4096 0 4096 0 0 0 0
-         %88 = OpExtInst %void %82 DescriptorSetBuffer 0 1 7 0 0 0 128 63 128 0 128 0 0 0 0
-         %89 = OpExtInst %void %82 SpecializationMapEntry 0 0 4
-         %90 = OpExtInst %void %82 SpecializationMapEntry 1 4 4
-         %91 = OpExtInst %void %82 SpecializationMapEntry 2 8 4
+         %173 = OpString ".VK_KHR_8bit_storage.VK_KHR_16bit_storage.VK_KHR_buffer_device_address.VK_KHR_driver_properties.VK_KHR_shader_float16_int8.VK_KHR_shader_float_controls.VK_KHR_shader_non_semantic_info.VK_KHR_storage_buffer_storage_class.VK_KHR_uniform_buffer_standard_layout.VK_KHR_variable_pointers.VK_KHR_vulkan_memory_model.VK_EXT_calibrated_timestamps.VK_EXT_descriptor_indexing.VK_KHR_shader_clock"
+         %174 = OpString "020000000100000001000000"
+         %175 = OpString "vksp_s0"
+         %176 = OpString "test_simple"
+    %uint_36 = OpConstant %uint 36
+         %179 = OpString "000000000000000000000000000000000000000000000000000000000000000020000000"
+     %uint_7 = OpConstant %uint 7
+  %uint_4096 = OpConstant %uint 4096
+    %uint_63 = OpConstant %uint 63
+   %uint_128 = OpConstant %uint 128
+     %uint_8 = OpConstant %uint 8
+         %172 = OpExtInst %void %82 Configuration %173 %uint_12 %174 %175 %176 %uint_16 %uint_1 %uint_1 %uint_0
+         %177 = OpExtInst %void %82 PushConstants %uint_0 %uint_36 %179 %uint_32
+         %180 = OpExtInst %void %82 DescriptorSetBuffer %uint_0 %uint_0 %uint_7 %uint_0 %uint_0 %uint_0 %uint_4096 %uint_63 %uint_4096 %uint_0 %uint_4096 %uint_0 %uint_0 %uint_0 %uint_0
+         %184 = OpExtInst %void %82 DescriptorSetBuffer %uint_0 %uint_1 %uint_7 %uint_0 %uint_0 %uint_0 %uint_128 %uint_63 %uint_128 %uint_0 %uint_128 %uint_0 %uint_0 %uint_0 %uint_0
+         %186 = OpExtInst %void %82 SpecializationMapEntry %uint_0 %uint_0 %uint_4
+         %187 = OpExtInst %void %82 SpecializationMapEntry %uint_1 %uint_4 %uint_4
+         %188 = OpExtInst %void %82 SpecializationMapEntry %uint_2 %uint_8 %uint_4
 
                ; Function 2
           %2 = OpFunction %void None %31
