@@ -41,7 +41,7 @@ public:
     Status Process() override
     {
         auto module = context()->module();
-        uint32_t ext_inst_id = module->GetExtInstImportId("NonSemantic.VkspReflection.2");
+        uint32_t ext_inst_id = module->GetExtInstImportId(VKSP_EXTINST_STR);
         int32_t descriptor_set_0_max_binding = -1;
         std::map<uint32_t, uint32_t> id_to_descriptor_set;
         std::map<uint32_t, uint32_t> id_to_binding;
