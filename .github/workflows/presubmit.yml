@@ -8,24 +8,24 @@ on:
 jobs:
   format:
     name: Check code formatting
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Install clang-format
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format clang-format-15
+          sudo apt-get install -y clang-format clang-format-17
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Check format
         run: |
-          git-clang-format --binary clang-format-15 --diff origin/main --extensions cpp,hpp > output.txt
+          git-clang-format --binary clang-format-17 --diff origin/main --extensions cpp,hpp > output.txt
           cat output.txt
           grep -E "(no modified files to format|clang-format did not modify any files)" output.txt
   build:
     name: Builds & Tests
     needs: format
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build libvulkan-dev clang-15 mesa-vulkan-drivers
+          sudo apt-get install ninja-build libvulkan-dev clang-17 mesa-vulkan-drivers
       - name: Build SPIRV-Tools
         run: |
           git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
