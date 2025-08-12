@@ -33,9 +33,8 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          variant: sccache
+          variant: ccache
           max-size: 2G
-          create-symlink: true
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -45,6 +44,7 @@ jobs:
           git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
           git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
           cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DSPIRV_SKIP_TESTS=1 \
             -DCMAKE_BUILD_TYPE=Release
@@ -54,7 +54,7 @@ jobs:
         run: |
           git clone --depth 1 --branch v51.2 https://github.com/google/perfetto third_party/perfetto
           $(pwd)/third_party/perfetto/tools/install-build-deps
-          $(pwd)/third_party/perfetto/tools/setup_all_configs.py
+          $(pwd)/third_party/perfetto/tools/setup_all_configs.py --ccache
           $(pwd)/third_party/perfetto/tools/ninja -C $(pwd)/third_party/perfetto/out/linux_clang_release libtrace_processor.a perfetto traced
       - name: Install Vulkan-Loader dependencies
         run: |
@@ -63,6 +63,7 @@ jobs:
         run : |
           git clone --depth 1 --branch v1.3.280 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
           cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DVulkanHeaders_DIR=$(pwd)/install/share/cmake/VulkanHeaders \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_C_COMPILER="$(which clang)" \
