@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if (NOT PERFETTO_TRACE_PROCESSOR_LIB)
+  message(FATAL_ERROR "PERFETTO_TRACE_PROCESSOR_LIB not defined")
+endif()
+if (NOT PERFETTO_INTERNAL_INCLUDE_PATH)
+  message(FATAL_ERROR "PERFETTO_INTERNAL_INCLUDE_PATH not defined")
+endif()
+
 add_library(vksp-spirv STATIC spirv.cpp)
 target_link_libraries(vksp-spirv ${SPIRV-Tools-opt_LIBRARIES})
 target_include_directories(vksp-spirv PUBLIC
