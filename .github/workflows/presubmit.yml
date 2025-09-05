@@ -22,6 +22,63 @@ jobs:
           git-clang-format --binary clang-format-17 --diff origin/main --extensions cpp,hpp > output.txt
           cat output.txt
           grep -E "(no modified files to format|clang-format did not modify any files)" output.txt
+  build-android:
+    name: Android Build
+    needs: format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: ccache
+          max-size: 2G
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build libvulkan-dev
+      - name: Clone dependencies
+        run: |
+          git clone --depth 1 --branch v51.2 https://github.com/google/perfetto third_party/perfetto
+          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
+          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
+      - name: Download and extract Android NDK
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-r27d-linux.zip -O android-ndk.zip
+          unzip android-ndk.zip -d .
+          rm android-ndk.zip
+          ls -l
+      - name: Build SPIRV-Tools
+        shell: bash
+        run: |
+          cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_TOOLCHAIN_FILE="$(realpath android-ndk-r27d/build/cmake/android.toolchain.cmake)" \
+            -DANDROID_ABI="arm64-v8a" \
+            -DANDROID_PLATFORM="35" \
+            -DSPIRV_SKIP_TESTS=1 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/spirv-tools/build
+          cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
+      - name: Build
+        shell: bash
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="android-ndk-r27d/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="arm64-v8a" \
+            -DANDROID_PLATFORM="35" \
+            -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
+            -DSPIRV_HEADERS_INCLUDE_PATH="$(pwd)/third_party/spirv-tools/external/spirv-headers/include" \
+            -DSPIRV_TOOLS_BUILD_PATH="$(pwd)/third_party/spirv-tools/build" \
+            -DSPIRV_TOOLS_SOURCE_PATH="$(pwd)/third_party/spirv-tools" \
+            -DSPIRV-Tools_DIR="$(pwd)/install/lib/cmake/SPIRV-Tools" \
+            -DSPIRV-Tools-opt_DIR="$(pwd)/install/lib/cmake/SPIRV-Tools-opt" \
+            -DVKSP_SKIP_EXTRACTOR=1 \
+            -DVKSP_SKIP_MERGE_BUFFERS=1 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
   build:
     name: Builds & Tests
     needs: format

@@ -17,6 +17,7 @@ target_include_directories(vulkan-shader-profiler-runner PUBLIC
   ${Vulkan_INCLUDE_DIRS}
   ${SPIRV-Tools-opt_INCLUDE_DIRS}
   ${SPIRV_TOOLS_SOURCE_PATH}
+  ${SPIRV_TOOLS_SOURCE_PATH}/include
   ${SPIRV_TOOLS_BUILD_PATH}
   ${CMAKE_SOURCE_DIR}
 )

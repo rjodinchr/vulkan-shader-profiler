@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if (NOT PERFETTO_SDK_PATH)
+  message(FATAL_ERROR "PERFETTO_SDK_PATH not defined")
+endif ()
+
 if (NOT PERFETTO_LIBRARY)
   add_library(perfetto STATIC ${PERFETTO_SDK_PATH}/perfetto.cc)
   set_target_properties(perfetto PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -24,6 +28,7 @@ target_include_directories(vulkan-shader-profiler PUBLIC
   ${PERFETTO_SDK_PATH}
   ${SPIRV-Tools-opt_INCLUDE_DIRS}
   ${SPIRV_TOOLS_SOURCE_PATH}
+  ${SPIRV_TOOLS_SOURCE_PATH}/include
   ${SPIRV_TOOLS_BUILD_PATH}
   ${CMAKE_SOURCE_DIR}
 )
@@ -32,6 +37,10 @@ if (SPIRV_HEADERS_INCLUDE_PATH)
 endif()
 
 target_link_libraries (vulkan-shader-profiler ${SPIRV-Tools-opt_LIBRARIES} ${PERFETTO_LIBRARY})
+
+if (ANDROID)
+  target_link_libraries(vulkan-shader-profiler log)
+endif()
 
 set(BACKEND "InProcess"
   CACHE STRING "Select perfetto backend")
