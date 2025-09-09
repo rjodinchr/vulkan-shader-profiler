@@ -25,10 +25,15 @@ static bool gVerbose = true;
 
 #include <condition_variable>
 #include <filesystem>
-#include <perfetto.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef VKSP_PERFETTO_AMALGAMATED
+#include <perfetto.h>
+#else
+#include <perfetto/tracing.h>
+#endif
 
 #include <fstream>
 #include <map>
