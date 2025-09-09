@@ -1,0 +1,51 @@
+// Copyright 2025 The Vulkan Shader Profiler authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_visibility: ["//visibility:private"],
+    default_applicable_licenses: ["vksp_license"],
+}
+
+license {
+    name: "vksp_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["SPDX-license-identifier-Apache-2.0"],
+    license_text: ["LICENSE"],
+}
+
+cc_binary {
+    name: "vulkan-shader-profiler-runner",
+    srcs: ["runner/runner.cpp"],
+    shared_libs: ["libvulkan"],
+    static_libs: [
+        "SPIRV-Tools_source_libSPIRV-Tools_a",
+        "SPIRV-Tools_source_opt_libSPIRV-Tools-opt_a",
+    ],
+    header_libs: ["SPIRV-Tools-sources"],
+}
+
+cc_library_shared {
+    name: "libvulkan-shader-profiler",
+    srcs: ["layer/layer.cpp"],
+    shared_libs: ["liblog"],
+    static_libs: [
+        "libperfetto_client_experimental",
+        "SPIRV-Tools_source_libSPIRV-Tools_a",
+        "SPIRV-Tools_source_opt_libSPIRV-Tools-opt_a",
+    ],
+    header_libs: [
+        "SPIRV-Tools-sources",
+        "vulkan_headers",
+    ],
+}

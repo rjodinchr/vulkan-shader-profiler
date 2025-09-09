@@ -58,3 +58,5 @@ target_compile_options(vulkan-shader-profiler PUBLIC "-DTRACE_MAX_SIZE=${TRACE_M
 
 set(TRACE_DEST "vulkan-shader-profiler.trace" CACHE STRING "Perfetto trace filename")
 target_compile_options(vulkan-shader-profiler PUBLIC "-DTRACE_DEST=\"${TRACE_DEST}\"")
+
+target_compile_definitions(vulkan-shader-profiler PRIVATE VKSP_PERFETTO_AMALGAMATED)
