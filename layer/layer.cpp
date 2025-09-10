@@ -64,9 +64,9 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
     if (!strcmp(pName, "vk" #func))                                                                                    \
         return (PFN_vkVoidFunction) & vksp_##func;
 
-#define SET_DISPATCH_TABLE(table, func, pointer, gpa, str, statement)                                                  \
+#define SET_DISPATCH_TABLE(table, func, pointer, gpa, str, statement, required)                                        \
     table.func = (PFN_vk##func)gpa(*pointer, "vk" #func);                                                              \
-    if (dispatchTable.func == nullptr) {                                                                               \
+    if (dispatchTable.func == nullptr && required) {                                                                   \
         PRINT("Could not trace a " str " because '" #func "' is missing");                                             \
         statement;                                                                                                     \
     }
@@ -1341,8 +1341,10 @@ VkResult VKAPI_CALL vksp_CreateInstance(
     }
 
     DispatchTable dispatchTable;
-#define FUNC_INS(f) SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_SUCCESS);
-#define FUNC_INS_INT(f) SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_SUCCESS);
+#define FUNC_INS(f)                                                                                                    \
+    SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_ERROR_INITIALIZATION_FAILED, false);
+#define FUNC_INS_INT(f)                                                                                                \
+    SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_ERROR_INITIALIZATION_FAILED, true);
 #include "functions.def"
 
     gdispatch[*pInstance] = dispatchTable;
@@ -1428,6 +1430,10 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
         ppEnabledExtensionNamesConcat += "." + std::string(pCreateInfo->ppEnabledExtensionNames[i]);
     }
 
+#if __ANDROID__
+    PFN_vkGetInstanceProcAddr gipa = gdispatch[PhysicalDeviceToInstance[physicalDevice]].GetInstanceProcAddr;
+    PFN_vkGetDeviceProcAddr gdpa = gdispatch[PhysicalDeviceToInstance[physicalDevice]].GetDeviceProcAddr;
+#else
     VkLayerDeviceCreateInfo *layerCreateInfo = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
     while (layerCreateInfo
         && (layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO
@@ -1442,6 +1448,7 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     PFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     PFN_vkGetDeviceProcAddr gdpa = layerCreateInfo->u.pLayerInfo->pfnNextGetDeviceProcAddr;
     layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
+#endif
 
     PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice)gipa(VK_NULL_HANDLE, "vkCreateDevice");
 
@@ -1482,9 +1489,10 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
         "ppEnabledExtensionNames", ppEnabledExtensionNamesConcat);
 
     DispatchTable dispatchTable;
-#define FUNC_DEV(f) SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));
+#define FUNC_DEV(f)                                                                                                    \
+    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice), true);
 #define FUNC_DEV_INT(f)                                                                                                \
-    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));
+    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice), true);
 #include "functions.def"
 
     gdispatch[*pDevice] = dispatchTable;
@@ -1525,6 +1533,38 @@ void VKAPI_CALL vksp_DestroyDevice(VkDevice device, const VkAllocationCallbacks 
 
 extern "C" {
 
+static const VkLayerProperties layerProperty = { "VK_LAYER_SHADER_PROFILER", VK_MAKE_API_VERSION(0, 1, 3, 0), 1,
+    "Perfetto-based Vulkan Shader Profiler github.com/rjodinchr/vulkan-shader-profiler" };
+
+VkResult VKAPI_CALL vksp_EnumerateDeviceLayerProperties(
+    VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount, VkLayerProperties *pProperties)
+{
+    if (pPropertyCount) {
+        *pPropertyCount = 1;
+    }
+    if (pProperties) {
+        *pProperties = layerProperty;
+    }
+    return VK_SUCCESS;
+}
+
+VkResult VKAPI_CALL vksp_EnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties)
+{
+    if (pPropertyCount) {
+        *pPropertyCount = 1;
+    }
+    if (pProperties) {
+        *pProperties = layerProperty;
+    }
+    return VK_SUCCESS;
+}
+
+VkResult VKAPI_CALL vksp_EnumerateInstanceExtensionProperties(
+    const char *pLayerName, uint32_t *pPropertyCount, VkExtensionProperties *pProperties)
+{
+    return VK_SUCCESS;
+}
+
 PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char *pName)
 {
     std::lock_guard<std::mutex> lock(glock);
@@ -1534,7 +1574,11 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char
 #include "functions.def"
     }
 
+#if __ANDROID__
+    return gdispatch[PhysicalDeviceToInstance[DeviceToPhysicalDevice[device]]].GetDeviceProcAddr(device, pName);
+#else
     return gdispatch[device].GetDeviceProcAddr(device, pName);
+#endif
 }
 
 PFN_vkVoidFunction VKAPI_CALL vksp_GetInstanceProcAddr(VkInstance instance, const char *pName)
@@ -1546,4 +1590,29 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetInstanceProcAddr(VkInstance instance, cons
 
     return gdispatch[instance].GetInstanceProcAddr(instance, pName);
 }
+
+#if __ANDROID__
+VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
+    VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount, VkLayerProperties *pProperties)
+{
+    return vksp_EnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
+}
+VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties)
+{
+    return vksp_EnumerateInstanceLayerProperties(pPropertyCount, pProperties);
+}
+VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
+    const char *pLayerName, uint32_t *pPropertyCount, VkExtensionProperties *pProperties)
+{
+    return vksp_EnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
+}
+PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *pName)
+{
+    return vksp_GetDeviceProcAddr(device, pName);
+}
+PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *pName)
+{
+    return vksp_GetInstanceProcAddr(instance, pName);
+}
+#endif
 }

@@ -26,3 +26,7 @@ if (SPIRV_HEADERS_INCLUDE_PATH)
 endif()
 
 target_link_libraries(vulkan-shader-profiler-runner ${Vulkan_LIBRARIES} ${SPIRV-Tools-opt_LIBRARIES})
+
+if (ANDROID)
+  target_link_libraries(vulkan-shader-profiler-runner log)
+endif()

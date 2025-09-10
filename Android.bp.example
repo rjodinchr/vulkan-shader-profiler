@@ -27,7 +27,10 @@ license {
 cc_binary {
     name: "vulkan-shader-profiler-runner",
     srcs: ["runner/runner.cpp"],
-    shared_libs: ["libvulkan"],
+    shared_libs: [
+        "liblog",
+        "libvulkan",
+    ],
     static_libs: [
         "SPIRV-Tools_source_libSPIRV-Tools_a",
         "SPIRV-Tools_source_opt_libSPIRV-Tools-opt_a",
@@ -36,7 +39,7 @@ cc_binary {
 }
 
 cc_library_shared {
-    name: "libvulkan-shader-profiler",
+    name: "libVkLayer_shader_profiler",
     srcs: ["layer/layer.cpp"],
     shared_libs: ["liblog"],
     static_libs: [
