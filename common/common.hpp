@@ -17,12 +17,24 @@
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 #define VKSP_EXTINST_STR "NonSemantic.VkspReflection.4"
 
+#ifdef __ANDROID__
+#define PRINT_IMPL(file, message, ...)                                                                                 \
+    do {                                                                                                               \
+        __android_log_print(                                                                                           \
+            android_LogPriority::ANDROID_LOG_ERROR, "VKSP", " %s: " message "\n", __func__, ##__VA_ARGS__);            \
+    } while (0)
+#else
 #define PRINT_IMPL(file, message, ...)                                                                                 \
     do {                                                                                                               \
         fprintf(file, "[VKSP] %s: " message "\n", __func__, ##__VA_ARGS__);                                            \
     } while (0)
+#endif
 
 #define ERROR(message, ...) PRINT_IMPL(stderr, message, ##__VA_ARGS__)
 
