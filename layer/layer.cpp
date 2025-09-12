@@ -64,9 +64,9 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
     if (!strcmp(pName, "vk" #func))                                                                                    \
         return (PFN_vkVoidFunction) & vksp_##func;
 
-#define SET_DISPATCH_TABLE(table, func, pointer, gpa, str, statement, required)                                        \
+#define SET_DISPATCH_TABLE(table, func, pointer, gpa, str, statement)                                                  \
     table.func = (PFN_vk##func)gpa(*pointer, "vk" #func);                                                              \
-    if (dispatchTable.func == nullptr && required) {                                                                   \
+    if (dispatchTable.func == nullptr) {                                                                               \
         PRINT("Could not trace a " str " because '" #func "' is missing");                                             \
         statement;                                                                                                     \
     }
@@ -123,15 +123,20 @@ static std::string byteToStr[] = {
 
 static std::mutex glock;
 
-typedef struct DispatchTable_ {
+typedef struct InstanceDispatchTable_ {
 #define FUNC_INS DISPATCH_TABLE_ELEMENT
 #define FUNC_INS_INT DISPATCH_TABLE_ELEMENT
+#include "functions.def"
+} InstanceDispatchTable;
+
+typedef struct DeviceDispatchTable_ {
 #define FUNC_DEV DISPATCH_TABLE_ELEMENT
 #define FUNC_DEV_INT DISPATCH_TABLE_ELEMENT
 #include "functions.def"
-} DispatchTable;
+} DeviceDispatchTable;
 
-static std::map<void *, DispatchTable> gdispatch;
+static std::map<void *, InstanceDispatchTable> gInstanceDispatch;
+static std::map<void *, DeviceDispatchTable> gDeviceDispatch;
 
 static std::set<VkDevice> DeviceNotToTrace;
 static std::map<VkQueue, VkDevice> QueueToDevice;
@@ -179,7 +184,7 @@ struct ThreadInfo {
             0,
         };
 
-        auto res = gdispatch[device].CreateSemaphore(device, &info, nullptr, &semaphore);
+        auto res = gDeviceDispatch[device].CreateSemaphore(device, &info, nullptr, &semaphore);
         if (res != VK_SUCCESS) {
             PRINT("vkCreateSemaphore failed (%d)", res);
             stop = true;
@@ -188,10 +193,10 @@ struct ThreadInfo {
         VkPhysicalDeviceProperties properties;
         VkPhysicalDevice pdev = DeviceToPhysicalDevice[device];
         VkInstance instance = PhysicalDeviceToInstance[pdev];
-        gdispatch[instance].GetPhysicalDeviceProperties(pdev, &properties);
+        gInstanceDispatch[instance].GetPhysicalDeviceProperties(pdev, &properties);
         ns_per_tick = properties.limits.timestampPeriod;
     };
-    ~ThreadInfo() { gdispatch[device].DestroySemaphore(device, semaphore, nullptr); }
+    ~ThreadInfo() { gDeviceDispatch[device].DestroySemaphore(device, semaphore, nullptr); }
 
     VkDevice device;
     VkQueue queue;
@@ -285,14 +290,14 @@ static bool allocate_buffer(
     const VkBufferCreateInfo pCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, ds.buffer.size,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr };
 
-    VkResult res = gdispatch[device].CreateBuffer(device, &pCreateInfo, nullptr, &buffer);
+    VkResult res = gDeviceDispatch[device].CreateBuffer(device, &pCreateInfo, nullptr, &buffer);
     if (res != VK_SUCCESS) {
         PRINT("Could not create buffer (%u)", res);
         return false;
     }
 
     VkMemoryRequirements memreqs;
-    gdispatch[device].GetBufferMemoryRequirements(device, buffer, &memreqs);
+    gDeviceDispatch[device].GetBufferMemoryRequirements(device, buffer, &memreqs);
     bool memoryTypeFound = false;
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
         auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
@@ -317,13 +322,13 @@ static bool allocate_buffer(
         ds.buffer.memoryType,
     };
     VkDeviceMemory memory;
-    res = gdispatch[device].AllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    res = gDeviceDispatch[device].AllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     if (res != VK_SUCCESS) {
         PRINT("Could not allocate memory (%u)", res);
         return false;
     }
 
-    res = gdispatch[device].BindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
+    res = gDeviceDispatch[device].BindBufferMemory(device, buffer, memory, ds.buffer.bindOffset);
     if (res != VK_SUCCESS) {
         PRINT("Could not bind buffer memory (%u)", res);
         return false;
@@ -351,14 +356,14 @@ static bool allocate_image(
         (VkSampleCountFlagBits)ds.image.samples, (VkImageTiling)ds.image.tiling, VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         VK_SHARING_MODE_EXCLUSIVE, 0, nullptr, (VkImageLayout)ds.image.initialLayout };
 
-    VkResult res = gdispatch[device].CreateImage(device, &pCreateInfo, nullptr, &image);
+    VkResult res = gDeviceDispatch[device].CreateImage(device, &pCreateInfo, nullptr, &image);
     if (res != VK_SUCCESS) {
         PRINT("Could not create image (%u)", res);
         return false;
     }
 
     VkMemoryRequirements memreqs;
-    gdispatch[device].GetImageMemoryRequirements(device, image, &memreqs);
+    gDeviceDispatch[device].GetImageMemoryRequirements(device, image, &memreqs);
     bool memoryTypeFound = false;
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
         auto dev_properties = memProperties.memoryTypes[i].propertyFlags;
@@ -384,13 +389,13 @@ static bool allocate_image(
     };
 
     VkDeviceMemory memory;
-    res = gdispatch[device].AllocateMemory(device, &pAllocateInfo, nullptr, &memory);
+    res = gDeviceDispatch[device].AllocateMemory(device, &pAllocateInfo, nullptr, &memory);
     if (res != VK_SUCCESS) {
         PRINT("Could not allocate memory (%u)", res);
         return false;
     }
 
-    res = gdispatch[device].BindImageMemory(device, image, memory, ds.image.bindOffset);
+    res = gDeviceDispatch[device].BindImageMemory(device, image, memory, ds.image.bindOffset);
     if (res != VK_SUCCESS) {
         PRINT("Could not bind image memory (%u)", res);
         return false;
@@ -429,7 +434,7 @@ static void extract_buffers_setup(VkDevice device, VkPhysicalDevice pDevice)
         return;
     }
     VkPhysicalDeviceMemoryProperties memProperties;
-    gdispatch[PhysicalDeviceToInstance[pDevice]].GetPhysicalDeviceMemoryProperties(pDevice, &memProperties);
+    gInstanceDispatch[PhysicalDeviceToInstance[pDevice]].GetPhysicalDeviceMemoryProperties(pDevice, &memProperties);
 
     std::vector<uint32_t> shader;
     std::vector<vksp::vksp_push_constant> pc;
@@ -471,7 +476,7 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
 {
     VkMemoryBarrier memoryBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT,
         VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT };
-    gdispatch[device].CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+    gDeviceDispatch[device].CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
         &memoryBarrier, 0, nullptr, 0, nullptr);
 
@@ -509,7 +514,8 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
                 continue;
             }
             const VkBufferCopy pRegion = { offset, offset, range };
-            gdispatch[device].CmdCopyBuffer(commandBuffer, dsUpdatedFind->second.buffer, ds.object.buffer, 1, &pRegion);
+            gDeviceDispatch[device].CmdCopyBuffer(
+                commandBuffer, dsUpdatedFind->second.buffer, ds.object.buffer, 1, &pRegion);
         } break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
@@ -533,7 +539,7 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
                 ds.object.image,
                 subresourceRange,
             };
-            gdispatch[device].CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            gDeviceDispatch[device].CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
             const VkImageCopy pRegion = {
                 .srcSubresource
@@ -544,8 +550,8 @@ static void extract_buffers_copy(VkDevice device, VkCommandBuffer commandBuffer)
                 .dstOffset = { 0, 0, 0 },
                 .extent = { ds.object.width, ds.object.height, ds.object.depth },
             };
-            gdispatch[device].CmdCopyImage(commandBuffer, dsUpdatedFind->second.image, dsUpdatedFind->second.layout,
-                ds.object.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &pRegion);
+            gDeviceDispatch[device].CmdCopyImage(commandBuffer, dsUpdatedFind->second.image,
+                dsUpdatedFind->second.layout, ds.object.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &pRegion);
         } break;
         case VK_DESCRIPTOR_TYPE_SAMPLER:
             break;
@@ -562,7 +568,7 @@ static void extract_buffers_create_file(VkDevice device)
     vksp::BuffersFile buffers_file(DispatchIdToExtract, oneFile);
     for (auto &ds : DescriptorSetsExtracted) {
         void *data;
-        VkResult res = gdispatch[device].MapMemory(device, ds.memory, 0, ds.size, 0, &data);
+        VkResult res = gDeviceDispatch[device].MapMemory(device, ds.memory, 0, ds.size, 0, &data);
         if (res != VK_SUCCESS) {
             PRINT("Could not map memory for (%u, %u) (%u)", ds.dstSet, ds.dstBinding, res);
             continue;
@@ -578,7 +584,7 @@ static void extract_buffers_create_file(VkDevice device)
     }
 
     for (auto &ds : DescriptorSetsExtracted) {
-        gdispatch[device].UnmapMemory(device, ds.memory);
+        gDeviceDispatch[device].UnmapMemory(device, ds.memory);
     }
 
     std::lock_guard<std::mutex> lock(glock);
@@ -594,13 +600,13 @@ static void extract_buffers_clean(VkDevice device)
         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
-            gdispatch[device].DestroyBuffer(device, ds.object.buffer, nullptr);
-            gdispatch[device].FreeMemory(device, ds.memory, nullptr);
+            gDeviceDispatch[device].DestroyBuffer(device, ds.object.buffer, nullptr);
+            gDeviceDispatch[device].FreeMemory(device, ds.memory, nullptr);
         } break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
-            gdispatch[device].DestroyImage(device, ds.object.image, nullptr);
-            gdispatch[device].FreeMemory(device, ds.memory, nullptr);
+            gDeviceDispatch[device].DestroyImage(device, ds.object.image, nullptr);
+            gDeviceDispatch[device].FreeMemory(device, ds.memory, nullptr);
         } break;
         case VK_DESCRIPTOR_TYPE_SAMPLER:
             break;
@@ -628,7 +634,7 @@ static VkResult WaitSemaphore(ThreadInfo *info, ThreadJob *job)
         waitInfo.pValues = &job->timeline_id;
 
         TRACE_EVENT_BEGIN(VKSP_PERFETTO_CATEGORY, "vkWaitSemaphores", "value", job->timeline_id);
-        result = gdispatch[info->device].WaitSemaphores(info->device, &waitInfo, 1000000);
+        result = gDeviceDispatch[info->device].WaitSemaphores(info->device, &waitInfo, 1000000);
         TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY);
 
         if (result != VK_TIMEOUT && result != VK_SUCCESS) {
@@ -667,7 +673,7 @@ static VkResult sync_timestamps_in_host_timeline(uint64_t &start, uint64_t &end,
         = { { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT },
               { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT } };
 
-    auto res = gdispatch[info->device].GetCalibratedTimestampsEXT(
+    auto res = gDeviceDispatch[info->device].GetCalibratedTimestampsEXT(
         info->device, NB_TIMESTAMP, timestamp_infos, timestamps, &max_deviation);
     if (res != VK_SUCCESS) {
         PRINT("vkGetCalibratedTimestampsEXT failed (%d)", res);
@@ -702,13 +708,13 @@ static void GenerateTrace(ThreadInfo *info, ThreadDispatch &cmd)
 {
     // Get timestamps
     uint64_t timestamps[NB_TIMESTAMP];
-    VkResult result = gdispatch[info->device].GetQueryPoolResults(info->device, cmd.query_pool, 0, NB_TIMESTAMP,
+    VkResult result = gDeviceDispatch[info->device].GetQueryPoolResults(info->device, cmd.query_pool, 0, NB_TIMESTAMP,
         sizeof(timestamps), timestamps, sizeof(timestamps[0]), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
     if (result != VK_SUCCESS) {
         PRINT("vkGetQueryPoolResults failed (%d)", result);
         return;
     }
-    gdispatch[info->device].DestroyQueryPool(info->device, cmd.query_pool, nullptr);
+    gDeviceDispatch[info->device].DestroyQueryPool(info->device, cmd.query_pool, nullptr);
 
     uint64_t start = timestamp_to_ns(info, timestamps[0]);
     uint64_t end = timestamp_to_ns(info, timestamps[1]);
@@ -771,7 +777,7 @@ void VKAPI_CALL vksp_GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, 
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkGetDeviceQueue", "device", (void *)device);
 
-    gdispatch[device].GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+    gDeviceDispatch[device].GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
 
     auto info = new ThreadInfo(device, *pQueue);
     QueueToDevice[*pQueue] = device;
@@ -834,7 +840,7 @@ VkResult VKAPI_CALL vksp_QueueSubmit(VkQueue queue, uint32_t submitCount, const 
         }
     }
 
-    VkResult result = gdispatch[QueueToDevice[queue]].QueueSubmit(queue, submitCount, mSubmits, fence);
+    VkResult result = gDeviceDispatch[QueueToDevice[queue]].QueueSubmit(queue, submitCount, mSubmits, fence);
 
     for (unsigned eachSubmit = 0; eachSubmit < submitCount; eachSubmit++) {
         auto &submit = pSubmits[eachSubmit];
@@ -859,7 +865,7 @@ VkResult VKAPI_CALL vksp_AllocateCommandBuffers(
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkAllocateCommandBuffers", "device", (void *)device);
 
-    VkResult result = gdispatch[device].AllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
+    VkResult result = gDeviceDispatch[device].AllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
     if (result != VK_SUCCESS) {
         return result;
     }
@@ -883,7 +889,7 @@ void VKAPI_CALL vksp_FreeCommandBuffers(
         CmdBufferToThreadDispatch[pCommandBuffers[i]].clear();
     }
 
-    gdispatch[device].FreeCommandBuffers(device, commandPool, commandBufferCount, pCommandBuffers);
+    gDeviceDispatch[device].FreeCommandBuffers(device, commandPool, commandBufferCount, pCommandBuffers);
 }
 
 VkResult VKAPI_CALL vksp_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo)
@@ -893,7 +899,7 @@ VkResult VKAPI_CALL vksp_BeginCommandBuffer(VkCommandBuffer commandBuffer, const
 
     CmdBufferToThreadDispatch[commandBuffer].clear();
 
-    return gdispatch[CmdBufferToDevice[commandBuffer]].BeginCommandBuffer(commandBuffer, pBeginInfo);
+    return gDeviceDispatch[CmdBufferToDevice[commandBuffer]].BeginCommandBuffer(commandBuffer, pBeginInfo);
 }
 
 static uint64_t dispatchId = 0;
@@ -944,7 +950,7 @@ void VKAPI_CALL vksp_CmdDispatch(
         NB_TIMESTAMP,
         0,
     };
-    auto &d = gdispatch[device];
+    auto &d = gDeviceDispatch[device];
     auto res
         = d.CreateQueryPool(CmdBufferToDevice[commandBuffer], &query_pool_create_info, nullptr, &dispatch.query_pool);
     if (res != VK_SUCCESS) {
@@ -969,7 +975,8 @@ void VKAPI_CALL vksp_CmdBindPipeline(
 
     CmdBufferToPipeline[commandBuffer] = pipeline;
 
-    return gdispatch[CmdBufferToDevice[commandBuffer]].CmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
+    return gDeviceDispatch[CmdBufferToDevice[commandBuffer]].CmdBindPipeline(
+        commandBuffer, pipelineBindPoint, pipeline);
 }
 
 VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
@@ -980,7 +987,7 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "createInfoCount",
         createInfoCount);
 
-    VkResult result = gdispatch[device].CreateComputePipelines(
+    VkResult result = gDeviceDispatch[device].CreateComputePipelines(
         device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
 
     for (unsigned j = 0; j < createInfoCount; j++) {
@@ -1069,7 +1076,7 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
     }
     spvContextDestroy(context);
 
-    VkResult result = gdispatch[device].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+    VkResult result = gDeviceDispatch[device].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
 
     ShaderModuleToString[*pShaderModule] = shader_str;
 
@@ -1144,7 +1151,7 @@ void VKAPI_CALL vksp_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWr
         }
     }
 
-    gdispatch[device].UpdateDescriptorSets(
+    gDeviceDispatch[device].UpdateDescriptorSets(
         device, descriptorWriteCount, pDescriptorWrites, descriptorCopyCount, pDescriptorCopies);
 }
 
@@ -1165,8 +1172,8 @@ void VKAPI_CALL vksp_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipe
         DstSetIndexToPtr[firstSet + i] = (void *)pDescriptorSets[i];
     }
 
-    gdispatch[device].CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount,
-        pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
+    gDeviceDispatch[device].CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet,
+        descriptorSetCount, pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
 }
 
 VkResult VKAPI_CALL vksp_CreateBuffer(
@@ -1175,7 +1182,7 @@ VkResult VKAPI_CALL vksp_CreateBuffer(
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateBuffer", "device", (void *)device);
 
-    auto result = gdispatch[device].CreateBuffer(device, pCreateInfo, pAllocator, pBuffer);
+    auto result = gDeviceDispatch[device].CreateBuffer(device, pCreateInfo, pAllocator, pBuffer);
 
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateBuffer-result", "buffer", (void *)*pBuffer, "flags",
         pCreateInfo->flags, "size", pCreateInfo->size, "usage", pCreateInfo->usage, "sharingMode",
@@ -1197,7 +1204,7 @@ void VKAPI_CALL vksp_CmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineL
         (void *)commandBuffer, "stageFlags", stageFlags, "offset", offset, "size", size, "pValues",
         perfetto::DynamicString(pValuesStr));
 
-    gdispatch[device].CmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
+    gDeviceDispatch[device].CmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
 }
 
 VkResult VKAPI_CALL vksp_AllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
@@ -1206,7 +1213,7 @@ VkResult VKAPI_CALL vksp_AllocateMemory(VkDevice device, const VkMemoryAllocateI
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkAllocateMemory", "device", (void *)device);
 
-    auto result = gdispatch[device].AllocateMemory(device, pAllocateInfo, pAllocator, pMemory);
+    auto result = gDeviceDispatch[device].AllocateMemory(device, pAllocateInfo, pAllocator, pMemory);
 
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkAllocateMemory-mem", "memory", (void *)*pMemory, "size",
         pAllocateInfo->allocationSize, "type", pAllocateInfo->memoryTypeIndex);
@@ -1221,7 +1228,7 @@ VkResult VKAPI_CALL vksp_BindBufferMemory(
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBindBufferMemory", "device", (void *)device, "buffer", (void *)buffer,
         "memory", (void *)memory, "offset", memoryOffset);
 
-    return gdispatch[device].BindBufferMemory(device, buffer, memory, memoryOffset);
+    return gDeviceDispatch[device].BindBufferMemory(device, buffer, memory, memoryOffset);
 }
 
 VkResult VKAPI_CALL vksp_CreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo,
@@ -1230,7 +1237,7 @@ VkResult VKAPI_CALL vksp_CreateBufferView(VkDevice device, const VkBufferViewCre
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateBufferView", "device", (void *)device);
 
-    auto result = gdispatch[device].CreateBufferView(device, pCreateInfo, pAllocator, pView);
+    auto result = gDeviceDispatch[device].CreateBufferView(device, pCreateInfo, pAllocator, pView);
 
     BufferViewToCreateInfo[*pView] = *pCreateInfo;
 
@@ -1247,7 +1254,7 @@ VkResult VKAPI_CALL vksp_CreateImageView(VkDevice device, const VkImageViewCreat
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImageView", "device", (void *)device);
 
-    auto result = gdispatch[device].CreateImageView(device, pCreateInfo, pAllocator, pView);
+    auto result = gDeviceDispatch[device].CreateImageView(device, pCreateInfo, pAllocator, pView);
 
     ImageViewToImage[*pView] = pCreateInfo->image;
 
@@ -1269,7 +1276,7 @@ VkResult VKAPI_CALL vksp_BindImageMemory(
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkBindImageMemory", "device", (void *)device, "image", (void *)image, "memory",
         (void *)memory, "offset", memoryOffset);
 
-    return gdispatch[device].BindImageMemory(device, image, memory, memoryOffset);
+    return gDeviceDispatch[device].BindImageMemory(device, image, memory, memoryOffset);
 }
 
 VkResult VKAPI_CALL vksp_CreateImage(
@@ -1278,7 +1285,7 @@ VkResult VKAPI_CALL vksp_CreateImage(
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateImage", "device", (void *)device);
 
-    auto result = gdispatch[device].CreateImage(device, pCreateInfo, pAllocator, pImage);
+    auto result = gDeviceDispatch[device].CreateImage(device, pCreateInfo, pAllocator, pImage);
 
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateImage-result", "image", (void *)*pImage, "flags",
         pCreateInfo->flags, "imageType", pCreateInfo->imageType, "format", pCreateInfo->format, "width",
@@ -1296,7 +1303,7 @@ VkResult VKAPI_CALL vksp_CreateSampler(VkDevice device, const VkSamplerCreateInf
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateSampler", "device", (void *)device);
 
-    auto result = gdispatch[device].CreateSampler(device, pCreateInfo, pAllocator, pSampler);
+    auto result = gDeviceDispatch[device].CreateSampler(device, pCreateInfo, pAllocator, pSampler);
 
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateSampler-result", "sampler", (void *)*pSampler, "flags",
         pCreateInfo->flags, "magFilter", pCreateInfo->magFilter, "minFilter", pCreateInfo->minFilter, "mipmapMode",
@@ -1327,6 +1334,7 @@ VkResult VKAPI_CALL vksp_CreateInstance(
     }
 
     if (layerCreateInfo == NULL) {
+        PRINT("Could not find layerCreateInfo");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -1340,14 +1348,14 @@ VkResult VKAPI_CALL vksp_CreateInstance(
         return ret;
     }
 
-    DispatchTable dispatchTable;
+    InstanceDispatchTable dispatchTable;
 #define FUNC_INS(f)                                                                                                    \
-    SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_ERROR_INITIALIZATION_FAILED, false);
+    SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_ERROR_INITIALIZATION_FAILED);
 #define FUNC_INS_INT(f)                                                                                                \
-    SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_ERROR_INITIALIZATION_FAILED, true);
+    SET_DISPATCH_TABLE(dispatchTable, f, pInstance, gpa, "instance", return VK_ERROR_INITIALIZATION_FAILED);
 #include "functions.def"
 
-    gdispatch[*pInstance] = dispatchTable;
+    gInstanceDispatch[*pInstance] = dispatchTable;
 
     perfetto::TracingInitArgs args;
 #ifdef BACKEND_INPROCESS
@@ -1401,15 +1409,15 @@ void VKAPI_CALL vksp_DestroyInstance(VkInstance instance, const VkAllocationCall
     perfetto::TrackEvent::Flush();
 #endif
 
-    auto DestroyInstance = gdispatch[instance].DestroyInstance;
-    gdispatch.erase(instance);
+    auto DestroyInstance = gInstanceDispatch[instance].DestroyInstance;
+    gInstanceDispatch.erase(instance);
     return DestroyInstance(instance, pAllocator);
 }
 
 VkResult VKAPI_CALL vksp_EnumeratePhysicalDevices(
     VkInstance instance, uint32_t *pPhysicalDeviceCount, VkPhysicalDevice *pPhysicalDevices)
 {
-    auto ret = gdispatch[instance].EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
+    auto ret = gInstanceDispatch[instance].EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
     if (pPhysicalDevices != nullptr) {
         for (unsigned i = 0; i < *pPhysicalDeviceCount; i++) {
             PhysicalDeviceToInstance[pPhysicalDevices[i]] = instance;
@@ -1430,10 +1438,6 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
         ppEnabledExtensionNamesConcat += "." + std::string(pCreateInfo->ppEnabledExtensionNames[i]);
     }
 
-#if __ANDROID__
-    PFN_vkGetInstanceProcAddr gipa = gdispatch[PhysicalDeviceToInstance[physicalDevice]].GetInstanceProcAddr;
-    PFN_vkGetDeviceProcAddr gdpa = gdispatch[PhysicalDeviceToInstance[physicalDevice]].GetDeviceProcAddr;
-#else
     VkLayerDeviceCreateInfo *layerCreateInfo = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
     while (layerCreateInfo
         && (layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO
@@ -1442,15 +1446,12 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     }
 
     if (layerCreateInfo == NULL) {
+        PRINT("Could not find layerCreateInfo");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    PFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     PFN_vkGetDeviceProcAddr gdpa = layerCreateInfo->u.pLayerInfo->pfnNextGetDeviceProcAddr;
     layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
-#endif
-
-    PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice)gipa(VK_NULL_HANDLE, "vkCreateDevice");
 
     std::vector<const char *> ppEnabledExtensionNames;
     for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
@@ -1480,7 +1481,8 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
         mCreateInfo.pNext = &timelineSemaphoreFeature;
     }
 
-    VkResult ret = createFunc(physicalDevice, &mCreateInfo, pAllocator, pDevice);
+    VkResult ret = gInstanceDispatch[PhysicalDeviceToInstance[physicalDevice]].CreateDevice(
+        physicalDevice, &mCreateInfo, pAllocator, pDevice);
     if (ret != VK_SUCCESS) {
         return ret;
     }
@@ -1488,14 +1490,13 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateDevice-enabled", "device", (void *)*pDevice,
         "ppEnabledExtensionNames", ppEnabledExtensionNamesConcat);
 
-    DispatchTable dispatchTable;
-#define FUNC_DEV(f)                                                                                                    \
-    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice), true);
+    DeviceDispatchTable dispatchTable;
+#define FUNC_DEV(f) SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));
 #define FUNC_DEV_INT(f)                                                                                                \
-    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice), true);
+    SET_DISPATCH_TABLE(dispatchTable, f, pDevice, gdpa, "device", DeviceNotToTrace.insert(*pDevice));
 #include "functions.def"
 
-    gdispatch[*pDevice] = dispatchTable;
+    gDeviceDispatch[*pDevice] = dispatchTable;
     DeviceToPhysicalDevice[*pDevice] = physicalDevice;
 
     extract_buffers_setup(*pDevice, physicalDevice);
@@ -1522,9 +1523,9 @@ void VKAPI_CALL vksp_DestroyDevice(VkDevice device, const VkAllocationCallbacks 
         thread.join();
         delete info;
     }
-    auto DestroyInstance = gdispatch[device].DestroyDevice;
-    gdispatch.erase(device);
-    return DestroyInstance(device, pAllocator);
+    auto DestroyDevice = gDeviceDispatch[device].DestroyDevice;
+    gDeviceDispatch.erase(device);
+    return DestroyDevice(device, pAllocator);
 }
 
 /*****************************************************************************/
@@ -1574,21 +1575,18 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char
 #include "functions.def"
     }
 
-#if __ANDROID__
-    return gdispatch[PhysicalDeviceToInstance[DeviceToPhysicalDevice[device]]].GetDeviceProcAddr(device, pName);
-#else
-    return gdispatch[device].GetDeviceProcAddr(device, pName);
-#endif
+    return gDeviceDispatch[device].GetDeviceProcAddr(device, pName);
 }
 
 PFN_vkVoidFunction VKAPI_CALL vksp_GetInstanceProcAddr(VkInstance instance, const char *pName)
 {
     std::lock_guard<std::mutex> lock(glock);
 
+    GET_PROC_ADDR(CreateInstance)
 #define FUNC_INS GET_PROC_ADDR
 #include "functions.def"
 
-    return gdispatch[instance].GetInstanceProcAddr(instance, pName);
+    return gInstanceDispatch[instance].GetInstanceProcAddr(instance, pName);
 }
 
 #if __ANDROID__

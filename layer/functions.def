@@ -13,16 +13,11 @@
 
 // Get/Create/Destroy functions
 FUNC_INS(GetInstanceProcAddr)
-FUNC_INS(CreateInstance)
 FUNC_INS(DestroyInstance)
 FUNC_INS(CreateDevice)
 FUNC_INS(EnumeratePhysicalDevices)
 FUNC_DEV(DestroyDevice)
-#if __ANDROID__
-FUNC_INS(GetDeviceProcAddr)
-#else
 FUNC_DEV(GetDeviceProcAddr)
-#endif
 
 // Functions to intercept for the profiler to work
 FUNC_DEV(GetDeviceQueue)
