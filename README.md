@@ -87,6 +87,19 @@ Make sure to have emerged and deployed the `vulkan-shader-profiler`.
 
 Then run the application using `vulkan-shader-profiler.sh`. This script will take care of setting all the environment variables needed to run with the `vulkan-shader-profiler`.
 
+## On Android
+
+* Clone the project under `<aosp>/external/vulkan-shader-profiler`
+* Compile the project through Soong (Android build system):
+```
+<aosp> $ mmm external/vulkan-shader-profiler
+```
+* Copy the library to the device and enable the layer:
+```
+<aosp> $ adb push $OUT/system/lib64/libVkLayer_shader_profiler.so /data/local/debug/vulkan/
+<aosp> $ adb shell setprop debug.vulkan.layers VK_LAYER_SHADER_PROFILER
+```
+
 ## Using the trace
 
 Once traces have been generated, on can view them using the [perfetto trace viewer](https://ui.perfetto.dev).
