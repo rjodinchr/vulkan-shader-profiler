@@ -129,10 +129,15 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
         = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES, &zeroInitializeWgMemFeatures };
     VkPhysicalDeviceShaderClockFeaturesKHR shaderClockFeatures
         = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR, &shaderAtomicInt64Features };
-    VkPhysicalDeviceFeatures2 pDeviceFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &shaderClockFeatures };
+    void *pNext = &shaderAtomicInt64Features;
+    if (!gDisableCounters) {
+        pNext = &shaderClockFeatures;
+    }
+    VkPhysicalDeviceFeatures2 pDeviceFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, pNext };
     vkGetPhysicalDeviceFeatures2(pDevice, &pDeviceFeatures);
     CHECK(shaderAtomicInt64Features.shaderBufferInt64Atomics != 0, "shaderBufferInt64Atomics not supported");
-    CHECK(shaderClockFeatures.shaderSubgroupClock != 0, "shaderClockFeatures.shaderSubgroupClock not supported");
+    CHECK(gDisableCounters || (shaderClockFeatures.shaderSubgroupClock != 0),
+        "shaderClockFeatures.shaderSubgroupClock not supported");
 
     uint32_t nbFamilies;
     vkGetPhysicalDeviceQueueFamilyProperties(pDevice, &nbFamilies, nullptr);
@@ -176,7 +181,9 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     std::string extensionsStr = std::string(enabledExtensionNames);
     extensionsStr.erase(0, 1); // remove first '.'
     std::vector<const char *> extensions = split_string(extensionsStr, ".");
-    extensions.push_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
+    if (!gDisableCounters) {
+        extensions.push_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
+    }
 
     const VkDeviceCreateInfo createInfo = {
         VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -1340,17 +1347,19 @@ int main(int argc, char **argv)
         "Could not allocate pipeline");
     PRINT("Compute pipeline allocated");
 
-    uint64_t gpu_timestamps[gNbGpuTimestamps];
-    std::chrono::steady_clock::time_point host_timestamps[3];
-    CHECK(execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps, memProperties) == 0,
-        "Could not execute");
-    PRINT("Execution completed");
+    if (gHotRun) {
+        uint64_t gpu_timestamps[gNbGpuTimestamps];
+        std::chrono::steady_clock::time_point host_timestamps[3];
+        CHECK(execute(device, cmdBuffer, queue, config, counters, gpu_timestamps, host_timestamps, memProperties) == 0,
+            "Could not execute");
+        PRINT("Execution completed");
 
-    CHECK(print_results(pDevice, device, config, counters, gpu_timestamps, host_timestamps) == 0,
-        "Could not print all results");
+        CHECK(print_results(pDevice, device, config, counters, gpu_timestamps, host_timestamps) == 0,
+            "Could not print all results");
 
-    if (gOutputDsPtr != nullptr) {
-        CHECK(dump_output(device) == 0, "Could not dump output memory");
+        if (gOutputDsPtr != nullptr) {
+            CHECK(dump_output(device) == 0, "Could not dump output memory");
+        }
     }
 
     clean_vk_objects(device, cmdBuffer, descSet, descSetLayoutVector, pipelineLayout, pipeline);
