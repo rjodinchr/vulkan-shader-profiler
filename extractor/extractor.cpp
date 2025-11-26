@@ -83,6 +83,19 @@ static bool gVerbose = false, gBinary = false;
 static uint64_t gDispatchId = UINT64_MAX;
 static std::string gInput = "", gOutput = "";
 static std::string gShaderFile = "";
+static bool gIntToHex = false;
+
+std::string to_string(uint64_t val)
+{
+    if (!gIntToHex) {
+        return std::to_string(val);
+    }
+    std::string output;
+    output.resize(19);
+    snprintf(output.data(), 19, "0x%.16lx", val);
+    output.erase(18);
+    return output;
+}
 
 void progress_callback(uint64_t size)
 {
@@ -205,7 +218,7 @@ bool get_shader_and_device_from_compute(TraceProcessor *tp, uint64_t compute, st
 bool get_extensions_from_device(TraceProcessor *tp, uint64_t device, const char *&enabledExtensionNames)
 {
     std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateDevice-enabled' AND "
-        + std::to_string(device)
+        + to_string(device)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.device' )";
     EXECUTE_QUERY(it, tp, query);
     uint64_t arg_set_id = it.Get(0).AsLong();
@@ -334,7 +347,7 @@ bool get_image_descriptor_set(
 
     std::string query
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateImageView-result' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(image_view)
+        + std::to_string(write_timestamp) + " AND " + to_string(image_view)
         + " = ( SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
           "'debug.pView')";
     EXECUTE_QUERY(it, tp, query);
@@ -358,7 +371,7 @@ bool get_image_descriptor_set(
 
     std::string query2
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateImage-result' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(image)
+        + std::to_string(write_timestamp) + " AND " + to_string(image)
         + " = ( SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
           "'debug.image')";
     EXECUTE_QUERY(it2, tp, query2);
@@ -381,7 +394,7 @@ bool get_image_descriptor_set(
     GET_INT_VALUE(tp, image_arg_set_id, "debug.width", ds.image.width);
 
     std::string query3 = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkBindImageMemory' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(image)
+        + std::to_string(write_timestamp) + " AND " + to_string(image)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.image')";
     EXECUTE_QUERY(it3, tp, query3);
     uint64_t bind_arg_set_id = it3.Get(0).AsLong();
@@ -393,7 +406,7 @@ bool get_image_descriptor_set(
 
     std::string query4
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkAllocateMemory-mem' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(memory)
+        + std::to_string(write_timestamp) + " AND " + to_string(memory)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.memory')";
     EXECUTE_QUERY(it4, tp, query4);
     uint64_t allocate_arg_set_id = it4.Get(0).AsLong();
@@ -413,7 +426,7 @@ bool get_sampler_descriptor_set(
 
     std::string query
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateSampler-result' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(sampler)
+        + std::to_string(write_timestamp) + " AND " + to_string(sampler)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.sampler')";
     EXECUTE_QUERY(it, tp, query);
     uint64_t sampler_arg_set_id = it.Get(0).AsLong();
@@ -446,7 +459,7 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
     std::string query
         = "SELECT arg_set_id, ts FROM slice WHERE slice.name = 'vkCmdBindDescriptorSets-ds' AND slice.ts > "
         + std::to_string(min_timestamp) + " AND slice.ts < " + std::to_string(max_timestamp) + " AND "
-        + std::to_string(commandBuffer)
+        + to_string(commandBuffer)
         + " = ( SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
           "'debug.commandBuffer') ORDER BY ts DESC";
     EXECUTE_QUERY(it, tp, query);
@@ -467,7 +480,7 @@ bool get_descriptor_set(TraceProcessor *tp, uint64_t commandBuffer, uint64_t max
 
         std::string query2
             = "SELECT arg_set_id, ts FROM slice WHERE slice.name = 'vkUpdateDescriptorSets-write' AND slice.ts < "
-            + std::to_string(bind_timestamp) + " AND " + std::to_string(dstSet)
+            + std::to_string(bind_timestamp) + " AND " + to_string(dstSet)
             + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.dstSet')";
         EXECUTE_QUERY(it2, tp, query2);
         do {
@@ -520,7 +533,7 @@ bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer,
     std::vector<vksp::vksp_specialization_map_entry> &map_entry_vector, vksp::vksp_configuration &config)
 {
     std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCmdBindPipeline' AND "
-        + std::to_string(commandBuffer)
+        + to_string(commandBuffer)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
           "'debug.commandBuffer') AND slice.ts < "
         + std::to_string(max_timestamp) + " ORDER BY ts DESC";
@@ -624,6 +637,10 @@ bool parse_args(int argc, char **argv)
         ERROR("'%s' does not exist", gInput.c_str());
         help();
         return false;
+    }
+
+    if (getenv("VKSP_EXTRACTOR_INT2HEX")) {
+        gIntToHex = true;
     }
 
     return true;
