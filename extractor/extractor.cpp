@@ -275,7 +275,7 @@ bool get_buffer_descriptor_set(
 
         std::string query_buffer_view
             = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateBufferView-result' AND slice.ts < "
-            + std::to_string(write_timestamp) + " AND " + std::to_string(buffer_view)
+            + std::to_string(write_timestamp) + " AND " + to_string(buffer_view)
             + "= (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pView')";
         EXECUTE_QUERY(it_buffer_view, tp, query_buffer_view);
         uint64_t buffer_view_id = it_buffer_view.Get(0).AsLong();
@@ -300,7 +300,7 @@ bool get_buffer_descriptor_set(
 
     std::string query
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkCreateBuffer-result' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(buffer)
+        + std::to_string(write_timestamp) + " AND " + to_string(buffer)
         + " = ( SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
           "'debug.buffer')";
     EXECUTE_QUERY(it, tp, query);
@@ -314,7 +314,7 @@ bool get_buffer_descriptor_set(
     GET_INT_VALUE(tp, buffer_arg_set_id, "debug.usage", ds.buffer.usage);
 
     std::string query2 = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkBindBufferMemory' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(buffer)
+        + std::to_string(write_timestamp) + " AND " + to_string(buffer)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.buffer')";
     EXECUTE_QUERY(it2, tp, query2);
     uint64_t bind_arg_set_id = it2.Get(0).AsLong();
@@ -326,7 +326,7 @@ bool get_buffer_descriptor_set(
 
     std::string query3
         = "SELECT arg_set_id, MAX(ts) FROM slice WHERE slice.name = 'vkAllocateMemory-mem' AND slice.ts < "
-        + std::to_string(write_timestamp) + " AND " + std::to_string(memory)
+        + std::to_string(write_timestamp) + " AND " + to_string(memory)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.memory')";
     EXECUTE_QUERY(it3, tp, query3);
     uint64_t allocate_arg_set_id = it3.Get(0).AsLong();
