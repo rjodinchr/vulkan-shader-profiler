@@ -47,6 +47,7 @@ cc_library_shared {
         "SPIRV-Tools_source_libSPIRV-Tools_a",
         "SPIRV-Tools_source_opt_libSPIRV-Tools-opt_a",
     ],
+    stl: "libc++_static",
     header_libs: [
         "SPIRV-Tools-sources",
         "vulkan_headers",
