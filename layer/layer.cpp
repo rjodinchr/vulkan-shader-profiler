@@ -1417,9 +1417,14 @@ void VKAPI_CALL vksp_DestroyInstance(VkInstance instance, const VkAllocationCall
 VkResult VKAPI_CALL vksp_EnumeratePhysicalDevices(
     VkInstance instance, uint32_t *pPhysicalDeviceCount, VkPhysicalDevice *pPhysicalDevices)
 {
-    auto ret = gInstanceDispatch[instance].EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
+    std::lock_guard<std::mutex> lock(glock);
+    uint32_t count;
+    auto ret = gInstanceDispatch[instance].EnumeratePhysicalDevices(instance, &count, pPhysicalDevices);
+    if (pPhysicalDeviceCount != nullptr) {
+        *pPhysicalDeviceCount = count;
+    }
     if (pPhysicalDevices != nullptr) {
-        for (unsigned i = 0; i < *pPhysicalDeviceCount; i++) {
+        for (unsigned i = 0; i < count; i++) {
             PhysicalDeviceToInstance[pPhysicalDevices[i]] = instance;
         }
     }
