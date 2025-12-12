@@ -1418,17 +1418,12 @@ VkResult VKAPI_CALL vksp_EnumeratePhysicalDevices(
     VkInstance instance, uint32_t *pPhysicalDeviceCount, VkPhysicalDevice *pPhysicalDevices)
 {
     std::lock_guard<std::mutex> lock(glock);
-    uint32_t count;
-    auto ret = gInstanceDispatch[instance].EnumeratePhysicalDevices(instance, &count, pPhysicalDevices);
-    if (pPhysicalDeviceCount != nullptr) {
-        *pPhysicalDeviceCount = count;
-    }
+    auto ret = gInstanceDispatch[instance].EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
     if (pPhysicalDevices != nullptr) {
-        for (unsigned i = 0; i < count; i++) {
+        for (unsigned i = 0; i < *pPhysicalDeviceCount; i++) {
             PhysicalDeviceToInstance[pPhysicalDevices[i]] = instance;
         }
     }
-
     return ret;
 }
 
