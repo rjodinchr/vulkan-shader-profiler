@@ -126,30 +126,30 @@ std::unique_ptr<TraceProcessor> initialize_database()
     return tp;
 }
 
-bool get_dispatch_compute_and_commandBuffer_from_dispatchId(TraceProcessor *tp, uint64_t dispatchId, uint64_t &dispatch,
-    uint64_t &compute, uint64_t &commandBuffer, vksp::vksp_configuration &config)
+bool get_dispatch_and_commandBuffer_from_dispatchId(TraceProcessor *tp, uint64_t dispatchId, uint64_t &dispatch,
+    uint64_t &commandBuffer, vksp::vksp_configuration &config)
 {
     std::string query = "SELECT arg_set_id FROM args WHERE args.key = 'debug.dispatchId' AND args.int_value = "
         + std::to_string(dispatchId);
     EXECUTE_QUERY(it, tp, query);
 
     dispatch = it.Get(0).AsLong();
-    if (!it.Next()) {
-        ERROR("Error: only 1 result, 2 expected");
-        return false;
+    config.entryPoint = nullptr;
+    config.shaderName = nullptr;
+    if (it.Next()) {
+        uint64_t compute = it.Get(0).AsLong();
+        GET_STR_VALUE(tp, compute, "debug.shader_name", config.entryPoint);
+        GET_STR_VALUE(tp, compute, "debug.shader", config.shaderName);
+        assert(!it.Next());
     }
-    compute = it.Get(0).AsLong();
 
     GET_INT_VALUE(tp, dispatch, "debug.commandBuffer", commandBuffer);
     GET_INT_VALUE(tp, dispatch, "debug.groupCountX", config.groupCountX);
     GET_INT_VALUE(tp, dispatch, "debug.groupCountY", config.groupCountY);
     GET_INT_VALUE(tp, dispatch, "debug.groupCountZ", config.groupCountZ);
 
-    GET_STR_VALUE(tp, compute, "debug.shader_name", config.entryPoint);
-
     config.dispatchId = dispatchId;
 
-    assert(!it.Next());
     return true;
 }
 
@@ -172,11 +172,9 @@ bool get_min_timestamp(TraceProcessor *tp, uint64_t commandBUffer, uint64_t max_
     return true;
 }
 
-bool get_shader_and_device_from_compute(TraceProcessor *tp, uint64_t compute, std::string &shader,
-    std::vector<char> &shader_buffer, uint64_t &device, vksp::vksp_configuration &config)
+bool get_shader_and_device_from_config(TraceProcessor *tp, std::string &shader, std::vector<char> &shader_buffer,
+    uint64_t &device, vksp::vksp_configuration &config)
 {
-    GET_STR_VALUE(tp, compute, "debug.shader", config.shaderName);
-
     std::string query = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule' AND '"
         + std::string(config.shaderName)
         + "' = (SELECT string_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.shader')";
@@ -555,6 +553,30 @@ bool get_map_entries_from_cmd_buffer(TraceProcessor *tp, uint64_t commandBuffer,
         assert(!it_create_compute_pipelines.Next());
     }
 
+    if (config.entryPoint == nullptr || config.shaderName == nullptr) {
+        std::string query_shader
+            = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-shader' AND "
+            + std::to_string(pipeline)
+            + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = "
+              "'debug.pipeline') "
+              "AND slice.ts < "
+            + std::to_string(max_timestamp) + " AND slice.ts > " + std::to_string(create_compute_pipelines_timestamp);
+        EXECUTE_QUERY(it_shader, tp, query_shader);
+        uint64_t arg_set_id = it_shader.Get(0).AsLong();
+        uint64_t shader_module;
+        GET_INT_VALUE(tp, arg_set_id, "debug.module", shader_module);
+        GET_STR_VALUE(tp, arg_set_id, "debug.pName", config.entryPoint);
+
+        std::string query_module = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateShaderModule-text' AND "
+            + std::to_string(shader_module)
+            + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.module') "
+              "AND slice.ts < "
+            + std::to_string(max_timestamp);
+        EXECUTE_QUERY(it_module, tp, query_module);
+        arg_set_id = it_module.Get(0).AsLong();
+        GET_STR_VALUE(tp, arg_set_id, "debug.shader", config.shaderName);
+    }
+
     std::string query2 = "SELECT arg_set_id FROM slice WHERE slice.name = 'vkCreateComputePipelines-MapEntry' AND "
         + std::to_string(pipeline)
         + " = (SELECT int_value FROM args WHERE args.arg_set_id = slice.arg_set_id AND args.key = 'debug.pipeline') "
@@ -659,25 +681,12 @@ int main(int argc, char **argv)
     PRINT("%s read with success", gInput.c_str());
 
     vksp::vksp_configuration config;
-    uint64_t dispatch, compute, commandBuffer;
-    CHECK(get_dispatch_compute_and_commandBuffer_from_dispatchId(
-              tp.get(), gDispatchId, dispatch, compute, commandBuffer, config),
+    uint64_t dispatch, commandBuffer;
+    CHECK(get_dispatch_and_commandBuffer_from_dispatchId(tp.get(), gDispatchId, dispatch, commandBuffer, config),
         "Could not get dispatch, compute and commandBuffer from dispatchId");
-    PRINT("Dispatch, compute and commandBuffer: %lu, %lu, %lu", dispatch, compute, commandBuffer);
+    PRINT("Dispatch and commandBuffer: %lu, %lu", dispatch, commandBuffer);
     PRINT("EntryPoint: '%s' - groupCount: %u-%u-%u", config.entryPoint, config.groupCountX, config.groupCountY,
         config.groupCountZ);
-
-    std::string shader;
-    uint64_t device;
-    std::vector<char> shader_buffer;
-    CHECK(get_shader_and_device_from_compute(tp.get(), compute, shader, shader_buffer, device, config),
-        "Could not get shader from compute");
-    PRINT("Device: %lu", device);
-    if (gShaderFile == "") {
-        PRINT("Shader from compute (name: '%s'):\n%s", config.shaderName, shader.c_str());
-    } else {
-        PRINT("Shader from file '%s' (name: '%s')\n", gShaderFile.c_str(), config.shaderName);
-    }
 
     uint64_t max_timestamp;
     CHECK(get_max_timestamp(tp.get(), dispatch, max_timestamp), "Could not get max_timestamp");
@@ -693,6 +702,18 @@ int main(int argc, char **argv)
     PRINT("specialization info data (size %u): '%s'", config.specializationInfoDataSize, config.specializationInfoData);
     for (auto &me : map_entry_vector) {
         PRINT("map_entry: constantID %u offset %u size %u", me.constantID, me.offset, me.size);
+    }
+
+    std::string shader;
+    uint64_t device;
+    std::vector<char> shader_buffer;
+    CHECK(get_shader_and_device_from_config(tp.get(), shader, shader_buffer, device, config),
+        "Could not get shader from compute");
+    PRINT("Device: %lu", device);
+    if (gShaderFile == "") {
+        PRINT("Shader from compute (name: '%s'):\n%s", config.shaderName, shader.c_str());
+    } else {
+        PRINT("Shader from file '%s' (name: '%s')\n", gShaderFile.c_str(), config.shaderName);
     }
 
     CHECK(get_extensions_from_device(tp.get(), device, config.enabledExtensionNames),
