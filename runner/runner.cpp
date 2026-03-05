@@ -123,8 +123,18 @@ static int get_device_queue_and_cmd_buffer(VkPhysicalDevice &pDevice, VkDevice &
     pDevice = physicalDevices.front();
 
     vkGetPhysicalDeviceMemoryProperties(pDevice, &memProperties);
+    VkPhysicalDeviceVariablePointerFeaturesKHR variablePointerFeatures
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES_KHR, nullptr };
+    VkPhysicalDeviceShaderSubgroupExtendedTypesFeaturesKHR shaderSubgroupExtendedTypesFeatures
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES_KHR, &variablePointerFeatures };
+    VkPhysicalDeviceShaderFloat16Int8FeaturesKHR float16Int8Features
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR, &shaderSubgroupExtendedTypesFeatures };
+    VkPhysicalDevice8BitStorageFeaturesKHR storage8bitFeatures
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES_KHR, &float16Int8Features };
+    VkPhysicalDevice16BitStorageFeaturesKHR storage16bitFeatures
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES_KHR, &storage8bitFeatures };
     VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures zeroInitializeWgMemFeatures
-        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES, nullptr };
+        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES, &storage16bitFeatures };
     VkPhysicalDeviceShaderAtomicInt64Features shaderAtomicInt64Features
         = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES, &zeroInitializeWgMemFeatures };
     VkPhysicalDeviceShaderClockFeaturesKHR shaderClockFeatures
