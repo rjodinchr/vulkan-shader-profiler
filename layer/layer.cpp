@@ -1011,6 +1011,9 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
                     (void *)pPipelines[j]);
             }
         }
+        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-shader", "module",
+            (void *)pCreateInfos[j].stage.module, "pName",
+            perfetto::DynamicString(PipelineToShaderModuleName[pPipelines[j]]), "pipeline", (void *)pPipelines[j]);
     }
 
     return result;
@@ -1056,27 +1059,28 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
         writeShaderOnDisk(dir, shader_str, code, code_size);
     }
 
+    VkResult result = gDeviceDispatch[device].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+
     spv_result_t spv_result = spvBinaryToText(context, code, word_count,
         SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
         &text, &diag);
     if (spv_result == SPV_SUCCESS) {
         std::string text_str(text->str);
         for (unsigned i = 0; i < text_str.size(); i += gBlockSize) {
-            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-text", "shader",
-                perfetto::DynamicString(shader_str), "text", perfetto::DynamicString(text_str.substr(i, gBlockSize)));
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-text", "module", (void *)*pShaderModule,
+                "shader", perfetto::DynamicString(shader_str), "text",
+                perfetto::DynamicString(text_str.substr(i, gBlockSize)));
             // let's wait a bit to let perfetto have the time to record everything correctly
             usleep(1);
         }
         spvTextDestroy(text);
     } else {
-        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-result", "shader",
-            perfetto::DynamicString(shader_str), "spv_result", spv_result, "diag",
+        TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-result", "module", (void *)*pShaderModule,
+            "shader", perfetto::DynamicString(shader_str), "spv_result", spv_result, "diag",
             perfetto::DynamicString(diag->error));
         spvDiagnosticDestroy(diag);
     }
     spvContextDestroy(context);
-
-    VkResult result = gDeviceDispatch[device].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
 
     ShaderModuleToString[*pShaderModule] = shader_str;
 
