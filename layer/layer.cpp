@@ -987,8 +987,13 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines", "device", (void *)device, "createInfoCount",
         createInfoCount);
 
-    VkResult result = gDeviceDispatch[device].CreateComputePipelines(
-        device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
+    VkResult result;
+    {
+        TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateComputePipelines-compile", "device", (void *)device,
+            "createInfoCount", createInfoCount);
+        result = gDeviceDispatch[device].CreateComputePipelines(
+            device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
+    }
 
     for (unsigned j = 0; j < createInfoCount; j++) {
         PipelineToShaderModule[pPipelines[j]] = pCreateInfos[j].stage.module;
@@ -1059,7 +1064,12 @@ VkResult VKAPI_CALL vksp_CreateShaderModule(VkDevice device, const VkShaderModul
         writeShaderOnDisk(dir, shader_str, code, code_size);
     }
 
-    VkResult result = gDeviceDispatch[device].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+    VkResult result;
+    {
+        TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateShaderModule-compile", "device", (void *)device, "shader",
+            perfetto::DynamicString(shader_str), "code_size", pCreateInfo->codeSize);
+        result = gDeviceDispatch[device].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+    }
 
     spv_result_t spv_result = spvBinaryToText(context, code, word_count,
         SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES | SPV_BINARY_TO_TEXT_OPTION_COMMENT,
