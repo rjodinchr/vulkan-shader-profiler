@@ -13,7 +13,16 @@
 # limitations under the License.
 
 if (NOT PERFETTO_SDK_PATH)
-  message(FATAL_ERROR "PERFETTO_SDK_PATH not defined")
+  message(STATUS "PERFETTO_SDK_PATH not set, fetching Perfetto...")
+  include(FetchContent)
+  FetchContent_Declare(
+    perfetto
+    GIT_REPOSITORY https://github.com/google/perfetto.git
+    GIT_TAG        v51.2
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(perfetto)
+  set(PERFETTO_SDK_PATH "${perfetto_SOURCE_DIR}/sdk" CACHE PATH "" FORCE)
 endif ()
 
 if (NOT PERFETTO_LIBRARY)
