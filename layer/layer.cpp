@@ -779,16 +779,22 @@ void VKAPI_CALL vksp_GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, 
 
     gDeviceDispatch[device].GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
 
-    auto info = new ThreadInfo(device, *pQueue);
     QueueToDevice[*pQueue] = device;
-    QueueToThreadInfo[*pQueue] = info;
-    QueueThreadPool[device].emplace_back(std::make_pair(*pQueue, [info] { QueueThreadFct(info); }));
+    if (DeviceNotToTrace.count(device) == 0) {
+        auto info = new ThreadInfo(device, *pQueue);
+        QueueToThreadInfo[*pQueue] = info;
+        QueueThreadPool[device].emplace_back(std::make_pair(*pQueue, [info] { QueueThreadFct(info); }));
+    }
 }
 
 VkResult VKAPI_CALL vksp_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence)
 {
     std::lock_guard<std::mutex> lock(glock);
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkQueueSubmit", "queue", (void *)queue, "submitCount", submitCount);
+
+    if (DeviceNotToTrace.count(QueueToDevice[queue])) {
+        return gDeviceDispatch[QueueToDevice[queue]].QueueSubmit(queue, submitCount, pSubmits, fence);
+    }
 
     auto info = QueueToThreadInfo[queue];
     ThreadJob *job = new ThreadJob();
@@ -1513,6 +1519,11 @@ VkResult VKAPI_CALL vksp_CreateDevice(VkPhysicalDevice physicalDevice, const VkD
     gDeviceDispatch[*pDevice] = dispatchTable;
     DeviceToPhysicalDevice[*pDevice] = physicalDevice;
 
+    if (DeviceNotToTrace.count(*pDevice)) {
+        TRACE_EVENT_INSTANT(
+            VKSP_PERFETTO_CATEGORY, "vkCreateDevice-submissions-not-tracked", "device", (void *)*pDevice);
+    }
+
     extract_buffers_setup(*pDevice, physicalDevice);
 
     return VK_SUCCESS;
@@ -1584,10 +1595,8 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char
 {
     std::lock_guard<std::mutex> lock(glock);
 
-    if (DeviceNotToTrace.count(device) == 0) {
 #define FUNC_DEV GET_PROC_ADDR
 #include "functions.def"
-    }
 
     return gDeviceDispatch[device].GetDeviceProcAddr(device, pName);
 }
