@@ -46,7 +46,7 @@ FUNC_DEV(CreateSampler)
 // Functions used internally by the profiler
 FUNC_DEV_INT(CreateSemaphore)
 FUNC_DEV_INT(DestroySemaphore)
-FUNC_DEV_INT(WaitSemaphores)
+FUNC_DEV_INT(WaitSemaphoresKHR)
 FUNC_DEV_INT(CreateQueryPool)
 FUNC_DEV_INT(DestroyQueryPool)
 FUNC_DEV_INT(GetQueryPoolResults)

@@ -634,7 +634,7 @@ static VkResult WaitSemaphore(ThreadInfo *info, ThreadJob *job)
         waitInfo.pValues = &job->timeline_id;
 
         TRACE_EVENT_BEGIN(VKSP_PERFETTO_CATEGORY, "vkWaitSemaphores", "value", job->timeline_id);
-        result = gDeviceDispatch[info->device].WaitSemaphores(info->device, &waitInfo, 1000000);
+        result = gDeviceDispatch[info->device].WaitSemaphoresKHR(info->device, &waitInfo, 1000000);
         TRACE_EVENT_END(VKSP_PERFETTO_CATEGORY);
 
         if (result != VK_TIMEOUT && result != VK_SUCCESS) {
