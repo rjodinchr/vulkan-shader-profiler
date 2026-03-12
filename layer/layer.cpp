@@ -1024,6 +1024,54 @@ VkResult VKAPI_CALL vksp_CreateComputePipelines(VkDevice device, VkPipelineCache
     return result;
 }
 
+VkResult VKAPI_CALL vksp_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+    uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator,
+    VkPipeline *pPipelines)
+{
+    std::lock_guard<std::mutex> lock(glock);
+    TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateGraphicsPipelines", "device", (void *)device, "createInfoCount",
+        createInfoCount);
+
+    VkResult result;
+    {
+        TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "vkCreateGraphicsPipelines-compile", "device", (void *)device,
+            "createInfoCount", createInfoCount);
+        result = gDeviceDispatch[device].CreateGraphicsPipelines(
+            device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
+    }
+
+    for (unsigned j = 0; j < createInfoCount; j++) {
+        for (unsigned s = 0; s < pCreateInfos[j].stageCount; s++) {
+            auto &stage = pCreateInfos[j].pStages[s];
+            PipelineToShaderModule[pPipelines[j]] = stage.module;
+            PipelineToShaderModuleName[pPipelines[j]] = std::string(stage.pName);
+
+            auto specializationInfo = stage.pSpecializationInfo;
+            if (specializationInfo != nullptr) {
+                std::string pData = "";
+                for (unsigned i = 0; i < specializationInfo->dataSize; i++) {
+                    pData += byteToStr[((unsigned char *)specializationInfo->pData)[i]];
+                }
+                TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateGraphicsPipelines-specialization", "mapEntryCount",
+                    specializationInfo->mapEntryCount, "dataSize", specializationInfo->dataSize, "pData",
+                    perfetto::DynamicString(pData), "pipeline", (void *)pPipelines[j]);
+
+                for (unsigned i = 0; i < specializationInfo->mapEntryCount; i++) {
+                    auto &mapEntry = specializationInfo->pMapEntries[i];
+                    TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateGraphicsPipelines-MapEntry", "constantID",
+                        mapEntry.constantID, "offset", mapEntry.offset, "size", mapEntry.size, "pipeline",
+                        (void *)pPipelines[j]);
+                }
+            }
+            TRACE_EVENT_INSTANT(VKSP_PERFETTO_CATEGORY, "vkCreateGraphicsPipelines-shader", "module",
+                (void *)stage.module, "pName", perfetto::DynamicString(std::string(stage.pName)), "pipeline",
+                (void *)pPipelines[j], "stage", (uint32_t)stage.stage);
+        }
+    }
+
+    return result;
+}
+
 static void writeShaderOnDisk(const char *dir, std::string shader_name, const uint32_t *code, const size_t code_size)
 {
     TRACE_EVENT(VKSP_PERFETTO_CATEGORY, "writeShaderOnDisk", "dir", perfetto::DynamicString(dir), "shader",
