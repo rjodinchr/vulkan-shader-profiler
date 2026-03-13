@@ -41,42 +41,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install ninja-build libvulkan-dev
-      - name: Clone dependencies
-        run: |
-          git clone --depth 1 --branch v51.2 https://github.com/google/perfetto third_party/perfetto
-          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
-          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
       - name: Download and extract Android NDK
         run: |
           wget https://dl.google.com/android/repository/android-ndk-r27d-linux.zip -O android-ndk.zip
           unzip android-ndk.zip -d .
           rm android-ndk.zip
           ls -l
-      - name: Build SPIRV-Tools
-        shell: bash
-        run: |
-          cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_TOOLCHAIN_FILE="$(realpath android-ndk-r27d/build/cmake/android.toolchain.cmake)" \
-            -DANDROID_ABI="arm64-v8a" \
-            -DANDROID_PLATFORM="35" \
-            -DSPIRV_SKIP_TESTS=1 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build third_party/spirv-tools/build
-          cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
       - name: Build
         shell: bash
         run: |
           cmake -B build -S . -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_TOOLCHAIN_FILE="android-ndk-r27d/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI="arm64-v8a" \
             -DANDROID_PLATFORM="35" \
-            -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
-            -DSPIRV_HEADERS_INCLUDE_PATH="$(pwd)/third_party/spirv-tools/external/spirv-headers/include" \
-            -DSPIRV_TOOLS_BUILD_PATH="$(pwd)/third_party/spirv-tools/build" \
-            -DSPIRV_TOOLS_SOURCE_PATH="$(pwd)/third_party/spirv-tools" \
-            -DSPIRV-Tools_DIR="$(pwd)/install/lib/cmake/SPIRV-Tools" \
-            -DSPIRV-Tools-opt_DIR="$(pwd)/install/lib/cmake/SPIRV-Tools-opt" \
             -DVKSP_SKIP_EXTRACTOR=1 \
             -DVKSP_SKIP_MERGE_BUFFERS=1 \
             -DCMAKE_BUILD_TYPE=Release
@@ -98,17 +76,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install ninja-build libvulkan-dev clang-17 mesa-vulkan-drivers
-      - name: Build SPIRV-Tools
-        run: |
-          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Tools.git third_party/spirv-tools
-          git clone --depth 1 --branch main https://github.com/KhronosGroup/SPIRV-Headers.git third_party/spirv-tools/external/spirv-headers
-          cmake -B third_party/spirv-tools/build -S third_party/spirv-tools/ -G Ninja \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER="$(which clang++)" \
-            -DSPIRV_SKIP_TESTS=1 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build third_party/spirv-tools/build
-          cmake --install third_party/spirv-tools/build --prefix $(pwd)/install/
       - name: Build Perfetto
         run: |
           git clone --depth 1 --branch v51.2 https://github.com/google/perfetto third_party/perfetto
@@ -123,7 +90,6 @@ jobs:
           git clone --depth 1 --branch v1.3.280 https://github.com/KhronosGroup/Vulkan-Loader.git third_party/vulkan-loader
           cmake -B third_party/vulkan-loader/build -S third_party/vulkan-loader -G Ninja \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DVulkanHeaders_DIR=$(pwd)/install/share/cmake/VulkanHeaders \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_C_COMPILER="$(which clang)" \
             -DUPDATE_DEPS=ON \
@@ -132,34 +98,28 @@ jobs:
       - name: Build debug
         run: |
           cmake -B build_debug -S . -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
             -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
             -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
             -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
             -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
-            -DSPIRV_HEADERS_INCLUDE_PATH="$(pwd)/third_party/spirv-tools/external/spirv-headers/include" \
-            -DSPIRV_TOOLS_BUILD_PATH="$(pwd)/third_party/spirv-tools/build" \
-            -DSPIRV_TOOLS_SOURCE_PATH="$(pwd)/third_party/spirv-tools" \
             -DEXTRACTOR_NOSTDINCXX=1 \
-            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DCMAKE_BUILD_TYPE=Debug
           cmake --build build_debug
       - name: Build release
         run: |
           cmake -B build_release -S . -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPERFETTO_SDK_PATH="$(pwd)/third_party/perfetto/sdk" \
             -DPERFETTO_INTERNAL_INCLUDE_PATH="$(pwd)/third_party/perfetto/include" \
             -DPERFETTO_GEN_INCLUDE_PATH="$(pwd)/third_party/perfetto/out/linux_clang_release/gen/build_config" \
             -DPERFETTO_TRACE_PROCESSOR_LIB="$(pwd)/third_party/perfetto/out/linux_clang_release/libtrace_processor.a" \
             -DPERFETTO_CXX_CONFIG_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx_config" \
             -DPERFETTO_CXX_SYSTEM_INCLUDE_PATH="$(pwd)/third_party/perfetto/buildtools/libcxx/include" \
-            -DSPIRV_HEADERS_INCLUDE_PATH="$(pwd)/third_party/spirv-tools/external/spirv-headers/include" \
-            -DSPIRV_TOOLS_BUILD_PATH="$(pwd)/third_party/spirv-tools/build" \
-            -DSPIRV_TOOLS_SOURCE_PATH="$(pwd)/third_party/spirv-tools" \
             -DEXTRACTOR_NOSTDINCXX=1 \
-            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH};$(pwd)/install/lib/cmake/SPIRV-Tools-opt;$(pwd)/install/lib/cmake/SPIRV-Tools" \
             -DCMAKE_CXX_COMPILER="$(which clang++)" \
             -DBACKEND=System \
             -DCMAKE_BUILD_TYPE=Release
