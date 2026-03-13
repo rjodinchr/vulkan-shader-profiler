@@ -783,6 +783,9 @@ void VKAPI_CALL vksp_GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, 
 
     gDeviceDispatch[device].GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
 
+    if (QueueToThreadInfo.count(*pQueue))
+        return;
+
     QueueToDevice[*pQueue] = device;
     if (DeviceNotToTrace.count(device) == 0) {
         auto info = new ThreadInfo(device, *pQueue);
