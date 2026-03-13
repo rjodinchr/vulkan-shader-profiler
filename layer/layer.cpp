@@ -64,6 +64,10 @@ static std::unique_ptr<perfetto::TracingSession> gTracingSession;
     if (!strcmp(pName, "vk" #func))                                                                                    \
         return (PFN_vkVoidFunction) & vksp_##func;
 
+#define GET_PROC_ADDR_DEV(func)                                                                                        \
+    if (!strcmp(pName, "vk" #func) && gDeviceDispatch[device].func != nullptr)                                         \
+        return (PFN_vkVoidFunction) & vksp_##func;
+
 #define SET_DISPATCH_TABLE(table, func, pointer, gpa, str, statement)                                                  \
     table.func = (PFN_vk##func)gpa(*pointer, "vk" #func);                                                              \
     if (dispatchTable.func == nullptr) {                                                                               \
@@ -1595,7 +1599,7 @@ PFN_vkVoidFunction VKAPI_CALL vksp_GetDeviceProcAddr(VkDevice device, const char
 {
     std::lock_guard<std::mutex> lock(glock);
 
-#define FUNC_DEV GET_PROC_ADDR
+#define FUNC_DEV GET_PROC_ADDR_DEV
 #include "functions.def"
 
     return gDeviceDispatch[device].GetDeviceProcAddr(device, pName);
