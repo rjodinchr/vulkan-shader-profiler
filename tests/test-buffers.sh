@@ -1,4 +1,6 @@
 #!/usr/bin/bash
+# Copyright 2026 vulkan-shader-profiler authors
+# SPDX-License-Identifier: Apache-2.0
 
 set -xe
 
