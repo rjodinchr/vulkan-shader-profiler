@@ -1,6 +1,6 @@
 # Vulkan Shader Profiler
 
-`vulkan-kernel-profiler` is a perfetto-based Vulkan shader profiler using the layering capability of the [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader)
+`vulkan-shader-profiler` is a perfetto-based Vulkan shader profiler using the layering capability of the [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader)
 
 It allows to visualize a vulkan application using perfetto with information about the compute shader to easily identify which shader is taking most of the application time, and what is its Vulkan SPIR-V source code.
 
@@ -8,7 +8,9 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 
 # Legal
 
-`vulkan-kernel-profiler` is licensed under the terms of the [Apache 2.0 license](LICENSE).
+`vulkan-shader-profiler` is licensed under the terms of the [Apache 2.0 license](LICENSE).
+
+This is not an officially supported Google product. This project is not eligible for the [Google Open Source Software Vulnerability Rewards Program](https://bughunters.google.com/open-source-security).
 
 # Table of contents
 
@@ -27,7 +29,7 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 
 # Dependencies
 
-`vulkan-kernel-profiler` depends on the following:
+`vulkan-shader-profiler` depends on the following:
 
 * [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader)
 * [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers)
@@ -35,15 +37,15 @@ Using the `vulkan-shader-profiler-extractor` and `vulkan-shader-profiler-runner`
 * [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools)
 * [perfetto](https://github.com/google/perfetto)
 
-`vulkan-kernel-profiler` also (obviously) depends on a Vulkan implementation.
+`vulkan-shader-profiler` also (obviously) depends on a Vulkan implementation.
 
 # Building
 
-`vulkan-kernel-profiler` uses CMake for its build system.
+`vulkan-shader-profiler` uses CMake for its build system.
 
 To compile it, please run:
 ```
-cmake -B <build_dir> -S <path-to-vulkan-kernel-profiler> -DPERFETTO_SDK_PATH=<path-to-perfetto-sdk> -DPERFETTO_TRACE_PROCESSOR_LIB=<path-to-libtrace_processor.a> -DPERFETTO_INTERNAL_INCLUDE_PATH=<path-to-perfetto-include> -DSPIRV_TOOLS_SOURCE_PATH=<path-to-spirv-tools-source-dir> -DSPIRV_TOOLS_BUILD_PATH=<path-to-spirv-tools-build-dir>
+cmake -B <build_dir> -S <path-to-vulkan-shader-profiler> -DPERFETTO_SDK_PATH=<path-to-perfetto-sdk> -DPERFETTO_TRACE_PROCESSOR_LIB=<path-to-libtrace_processor.a> -DPERFETTO_INTERNAL_INCLUDE_PATH=<path-to-perfetto-include> -DSPIRV_TOOLS_SOURCE_PATH=<path-to-spirv-tools-source-dir> -DSPIRV_TOOLS_BUILD_PATH=<path-to-spirv-tools-build-dir>
 cmake --build <build_dir>
 ```
 
@@ -54,7 +56,7 @@ For a real life examples, have a look at:
 ## Build options
 
 * REQUIRED:
-  * `PERFETTO_SDK_PATH`: path to [perfetto](https://github.com/google/perfetto) sdk (`vulkan-kernel-profiler` is looking for `PERFETTO_SDK_PATH/perfetto.cc` and `PERFETTO_SDK_PATH/perfetto.h`).
+  * `PERFETTO_SDK_PATH`: path to [perfetto](https://github.com/google/perfetto) sdk (`vulkan-shader-profiler` is looking for `PERFETTO_SDK_PATH/perfetto.cc` and `PERFETTO_SDK_PATH/perfetto.h`).
   * `PERFETTO_TRACE_PROCESSOR_LIB`: path to `libtrace_processor.a` produces by a perfetto build.
   * `PERFETTO_INTERNAL_INCLUDE_PATH`: path to perfetto internal include directory (`<perfetto>/include`), or where it is installed.
   * `SPIRV_TOOLS_SOURCE_PATH`: path to [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) source directory (PR [#5512](https://github.com/KhronosGroup/SPIRV-Tools/pull/5512) is needed).
@@ -70,11 +72,11 @@ For a real life examples, have a look at:
     * `InProcess` (default): the application will generate the traces ([perfetto documentation](https://perfetto.dev/docs/instrumentation/tracing-sdk#in-process-mode)). Build options and environment variables can be used to control the maximum size of traces and the destination file where the traces will be recorded.
     * `System`: perfetto `traced` daemon will be responsible for generating the traces ([perfetto documentation](https://perfetto.dev/docs/instrumentation/tracing-sdk#system-mode)).
   * `TRACE_MAX_SIZE` (only with `InProcess` backend): Maximum size (in KB) of traces that can be recorded. Can be overriden at runtime using the following environment variable: `VKSP_TRACE_MAX_SIZE` (Default: `1024`).
-  * `TRACE_DEST` (only with `InProcess` backend): File where the traces will be recorded. Can be overriden at runtime using the following environment variable: `VKSP_TRACE_DEST` (Default: `opencl-kernel-profiler.trace`).
+  * `TRACE_DEST` (only with `InProcess` backend): File where the traces will be recorded. Can be overriden at runtime using the following environment variable: `VKSP_TRACE_DEST` (Default: `vulkan-shader-profiler.trace`).
 
 # Running an application with Vulkan Shader Profiler
 
-To run an application with the `vulkan-kernel-profiler`, one need to ensure the following points:
+To run an application with the `vulkan-shader-profiler`, one need to ensure the following points:
 
 * The `Vulkan-Loader` needs to be able to find the manifest in `<vulkan-shader-profiler>/manifest/vulkan-shader-profiler.json`. This can be achieve by using the follow environment variable: `VK_ADD_LAYER_PATH=<path-to-vulkan-shader-profiler-manifest>`.
 * The Layer needs to be enabled. Either directly from the application, or using the following environment variable: `VK_LOADER_LAYERS_ENABLE="VK_LAYER_SHADER_PROFILER"`.
