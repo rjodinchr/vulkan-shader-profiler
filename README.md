@@ -1,3 +1,16 @@
+# Repository Migration Notice
+**This repository was archived on Mai 15, 2026. It is now read-only.**
+
+The project has been migrated to the Google Open Source organization. Please find the active codebase, issues, and future releases at the new canonical home:
+
+### [google/vulkan-shader-profiler](https://github.com/google/vulkan-shader-profiler)
+
+---
+*If you have a local clone of this repository, you can update your remote to point to the new location:*
+```bash
+git remote set-url origin https://github.com/google/vulkan-shader-profiler.git
+```
+
 # Vulkan Shader Profiler
 
 `vulkan-shader-profiler` is a perfetto-based Vulkan shader profiler using the layering capability of the [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader)
